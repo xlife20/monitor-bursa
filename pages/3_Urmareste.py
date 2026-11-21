@@ -6,6 +6,7 @@ from utils import load_csv, get_meta, fetch_data, c_pnl, c_rsi, f_price, f_rsi, 
 
 st.set_page_config(page_title="Urmărește", layout="wide")
 CSV_PATH = Path(__file__).resolve().parent.parent / "watchlist.csv"
+XTB_CSV = Path(__file__).resolve().parent.parent / "portfolio.csv"
 
 if st.button("⬅️ Meniu Principal"):
     st.switch_page("app.py")
@@ -20,6 +21,20 @@ df = load_csv(CSV_PATH, w_cols).copy()
 for c in w_cols:
     if c not in df.columns:
         df[c] = ""
+
+col_imp, col_add = st.columns([1.3, 2.7])
+with col_imp:
+    if st.button("📥 Importă companiile din Portofoliu XTB", use_container_width=True):
+        xtb_df = load_csv(XTB_CSV, ["Ticker", "Company", "Currency", "Sector"]).copy()
+        if not xtb_df.empty:
+            ex = set(df["Ticker"].astype(str).str.upper().tolist())
+            new_from_xtb = xtb_df[~xtb_df["Ticker"].astype(str).str.upper().isin(ex)][w_cols]
+            if not new_from_xtb.empty:
+                pd.concat([df[w_cols], new_from_xtb], ignore_index=True).to_csv(CSV_PATH, index=False)
+                st.cache_data.clear()
+                st.rerun()
+            else:
+                st.info("Toate companiile din XTB sunt deja în listă.")
 
 with st.expander("➕ Adaugă rapid mai multe tikere odată", expanded=False):
     raw = st.text_area("Introdu simbolurile separate prin virgulă sau spațiu:", placeholder="Ex: TSLA, KO, O, NVDA, NKE, BTC-EUR", height=70)
