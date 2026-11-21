@@ -78,17 +78,26 @@ def fetch_data(tickers, currencies):
     prices, prev_p, rsi_m, sma_m = dict(), dict(), dict(), dict()
     fx = dict(USD=1.0)
     uk = ["DGE.L", "BATS.L", "ABF.L"]
-    if tickers:
+    t_list = [tickers] if isinstance(tickers, str) else list(tickers)
+    if t_list:
         try:
-            data = yf.download(tickers, period="1y", progress=False, auto_adjust=False)["Close"]
-            for t in ([tickers] if isinstance(tickers, str) else tickers):
-                s = data.dropna() if isinstance(data, pd.Series) else (data[t].dropna() if t in data.columns else pd.Series())
+            raw = yf.download(t_list, period="14mo", progress=False, auto_adjust=False)
+            close_df = raw["Close"] if "Close" in raw else raw
+            for t in t_list:
+                s = close_df.dropna() if isinstance(close_df, pd.Series) else (close_df[t].dropna() if t in close_df.columns else pd.Series())
                 if not s.empty:
                     sc = 0.01 if t in uk else 1.0
                     prices[t] = float(s.iloc[-1]) * sc
                     prev_p[t] = float(s.iloc[-2]) * sc if len(s) >= 2 else prices[t]
                     rsi_m[t] = calc_rsi(s)
                     sma_m[t] = calc_sma(s, sc)
+                try:
+                    info_sma = yf.Ticker(t).info.get("twoHundredDayAverage")
+                    if info_sma and float(info_sma) > 0:
+                        sc = 0.01 if t in uk else 1.0
+                        sma_m[t] = float(info_sma) * sc
+                except Exception:
+                    pass
         except Exception:
             pass
     other = [c for c in currencies if c != "USD"]
