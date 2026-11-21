@@ -11,10 +11,32 @@ st.markdown("""
     div[data-testid="stMetric"] {
         background-color: #161b22;
         border: 1px solid #30363d;
-        padding: 12px;
+        padding: 10px 12px;
         border-radius: 8px;
     }
-    div[data-testid="stMetricValue"] { font-size: 1.55rem !important; }
+    div[data-testid="stMetricValue"] { font-size: 1.35rem !important; }
+    .custom-card {
+        background-color: #161b22;
+        border: 1px solid #30363d;
+        padding: 10px 12px;
+        border-radius: 8px;
+        height: 100%;
+    }
+    .custom-card-label {
+        font-size: 0.875rem;
+        color: #fafafa;
+        margin-bottom: 4px;
+    }
+    .custom-card-val {
+        font-size: 1.35rem;
+        font-weight: 600;
+        line-height: 1.2;
+    }
+    .custom-card-sub {
+        font-size: 0.8rem;
+        margin-top: 4px;
+        color: #9e9e9e;
+    }
     .tbl-box { max-height: 550px; overflow: auto; border: 1px solid #30363d; border-radius: 8px; background: #0e1117; }
     .tbl-box table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 14px; color: #fafafa; }
     .tbl-box thead th { position: sticky; top: 0; background: #161b22; z-index: 2; padding: 10px 8px; text-align: left; border-bottom: 2px solid #30363d; white-space: nowrap; }
@@ -127,15 +149,35 @@ view = view.sort_values(by=col_s, ascending=asc_s, na_position="last")
 st.sidebar.info(f"Prețuri live: {len(prices)}/{len(tickers)}\n\n1 EUR = {fx.get('EUR', 1.08):.4f} USD\n\n1 GBP = {fx.get('GBP', 1.27)/fx.get('EUR', 1.08):.4f} EUR")
 
 inv_s, mkt_s, div_s = view["Inv"].sum(), view["Mkt"].sum(), view["Div"].sum() + extra_div
-pnl_s = (mkt_s - inv_s) + div_s
-ret_s = pnl_s / inv_s * 100 if inv_s else 0
+gross_profit = view[view["PnL"] > 0]["PnL"].sum() + extra_div
+gross_loss = view[view["PnL"] < 0]["PnL"].sum()
+net_pnl = gross_profit + gross_loss
 
-c1, c2, c3, c4, c5 = st.columns([0.8, 1.2, 1.2, 1.2, 1.4])
+c1, c2, c3, c4, c5, c6 = st.columns([0.7, 1.15, 1.15, 1.15, 1.15, 1.15])
 c1.metric("Poziții", f"{len(view)}")
 c2.metric("Capital investit", f"{inv_s:,.2f} {t_curr}")
 c3.metric("Valoare piață", f"{mkt_s:,.2f} {t_curr}")
 c4.metric("Dividende nete", f"{div_s:,.2f} {t_curr}", f"+{extra_div:,.2f} închise" if extra_div > 0 else None)
-c5.metric("Profit Total (+Div.)", f"{pnl_s:,.2f} {t_curr}", f"{ret_s:.2f}%")
+
+with c5:
+    st.markdown(
+        f"<div class='custom-card'>"
+        f"<div class='custom-card-label'>Profit Total (Poz.)</div>"
+        f"<div class='custom-card-val' style='color:#00e676;'>+{gross_profit:,.2f} {t_curr}</div>"
+        f"<div class='custom-card-sub'>Net: {net_pnl:+.2f} {t_curr}</div>"
+        f"</div>",
+        unsafe_allow_html=True
+    )
+
+with c6:
+    st.markdown(
+        f"<div class='custom-card'>"
+        f"<div class='custom-card-label'>Pierdere Totală (Neg.)</div>"
+        f"<div class='custom-card-val' style='color:#ff5252;'>{gross_loss:,.2f} {t_curr}</div>"
+        f"<div class='custom-card-sub'>{len(view[view['PnL'] < 0])} poziții pe minus</div>"
+        f"</div>",
+        unsafe_allow_html=True
+    )
 
 st.subheader(f"Portofoliu (Valori convertite în {t_curr})")
 
@@ -176,13 +218,3 @@ with l2:
     if not view.empty: st.bar_chart(view.set_index("Ticker")["Mkt"], color="#29b6f6")
 with r2:
     st.subheader(f"Alocare pe sectoare ({t_curr})")
-    sv = view.groupby("Sector")["Mkt"].sum()
-    if not sv.empty: st.bar_chart(sv, color="#ab47bc")
-
-st.subheader("Editare poziții (în moneda originală)")
-edited = st.data_editor(view[req], num_rows="dynamic", use_container_width=True, key="portfolio_editor")
-if st.button("Salvează modificările în portfolio.csv"):
-    up = edited if c_filt == "Toate (Consolidat)" else pd.concat([df[df["Currency"] != c_filt][req], edited], ignore_index=True)
-    up.to_csv(CSV_PATH, index=False)
-    st.cache_data.clear()
-    st.success("Salvat! Reîncarcă pagina.")
