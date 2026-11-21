@@ -9,22 +9,41 @@ st.set_page_config(page_title="Urmărește", layout="wide")
 CSV_PATH = Path(__file__).resolve().parent.parent / "watchlist.csv"
 XTB_CSV = Path(__file__).resolve().parent.parent / "portfolio.csv"
 
-@st.cache_data(ttl=3600)
-def get_div_yields(tickers):
-    res = dict()
+@st.cache_data(ttl=1800)
+def get_auto_div_yields(tickers):
+    res_pct = dict()
     uk = ["DGE.L", "BATS.L", "ABF.L"]
     cutoff = pd.Timestamp.utcnow() - pd.Timedelta(days=365)
     for t in tickers:
         try:
-            divs = yf.Ticker(t).dividends
+            tk = yf.Ticker(t)
+            sc = 0.01 if t in uk else 1.0
+            p_now = float(tk.fast_info.get("lastPrice") or 0)
+            if p_now <= 0:
+                continue
+            p_real = p_now * sc
+
+            divs = tk.dividends
+            ann_div = 0.0
             if divs is not None and not divs.empty:
                 recent = divs[divs.index >= cutoff]
                 if not recent.empty:
-                    sc = 0.01 if t in uk else 1.0
-                    res[t] = float(recent.sum()) * sc
+                    vals = recent.values * sc
+                    if len(vals) >= 2:
+                        med = float(np.median(vals))
+                        vals = vals[vals <= med * 2.5]
+                    ann_div = float(np.sum(vals))
+
+            if ann_div <= 0:
+                info = tk.info or {}
+                dr = info.get("dividendRate") or info.get("trailingAnnualDividendRate") or 0
+                ann_div = float(dr) * sc
+
+            if ann_div > 0:
+                res_pct[t] = (ann_div / p_real) * 100.0
         except Exception:
             pass
-    return res
+    return res_pct
 
 if st.button("⬅️ Meniu Principal"):
     st.switch_page("app.py")
@@ -80,12 +99,11 @@ quick_del(df, w_cols, CSV_PATH, "watch")
 tickers = df["Ticker"].dropna().unique().tolist()
 all_curr = sorted(df["Currency"].dropna().unique().tolist()) or ["EUR", "USD"]
 prices, _, rsi_m, sma_m, _ = fetch_data(tickers, ["EUR", "USD", "GBP"])
-ann_div_map = get_div_yields(tickers)
+auto_yield_map = get_auto_div_yields(tickers)
 
 df["Avg_Price"] = pd.to_numeric(df["Ticker"].map(avg_price_map), errors="coerce").astype(float)
 df["Current"] = pd.to_numeric(df["Ticker"].map(prices), errors="coerce").astype(float)
-df["Ann_Div"] = pd.to_numeric(df["Ticker"].map(ann_div_map), errors="coerce").fillna(0.0).astype(float)
-df["Div_Yield"] = np.where((df["Current"].notna()) & (df["Current"] > 0), (df["Ann_Div"] / df["Current"]) * 100, np.nan).astype(float)
+df["Div_Yield"] = pd.to_numeric(df["Ticker"].map(auto_yield_map), errors="coerce").astype(float)
 df["RSI"] = pd.to_numeric(df["Ticker"].map(rsi_m), errors="coerce").astype(float)
 df["SMA200"] = pd.to_numeric(df["Ticker"].map(sma_m), errors="coerce").astype(float)
 df["SMA_Pct"] = np.where(df["SMA200"].notna() & (df["SMA200"] != 0), (df["Current"] - df["SMA200"]) / df["SMA200"] * 100, np.nan).astype(float)
