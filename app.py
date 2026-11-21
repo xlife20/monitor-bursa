@@ -87,6 +87,10 @@ def c_pnl(v):
     if pd.isna(v): return ""
     return "color: #00e676; font-weight: bold;" if v > 0 else ("color: #ff5252; font-weight: bold;" if v < 0 else "")
 
+def c_target(v):
+    if pd.isna(v): return ""
+    return "color: #00e676; font-weight: bold;" if v <= 0 else "color: #ffab40;"
+
 def c_rsi(v):
     if pd.isna(v): return ""
     return "color: #00e676; font-weight: bold;" if v <= 30 else ("color: #ff5252; font-weight: bold;" if v >= 70 else "")
@@ -127,6 +131,41 @@ if st.session_state.view_mode == "watch":
     st.title("👁️ Listă de Urmărire (Watchlist)")
     w_cols = ["Ticker", "Company", "Sector", "Target Price", "Currency"]
     df = load_data(WATCH_CSV, w_cols).copy()
+
+    with st.expander("➕ Adaugă rapid mai multe tikere odată", expanded=True):
+        raw_tickers = st.text_area(
+            "Introdu simbolurile Yahoo Finance separate prin virgulă, spațiu sau pe rânduri noi:",
+            placeholder="Ex: TSLA, KO, O, NVDA, BTC-EUR, RHM.DE, BATS.L",
+            height=80
+        )
+        if st.button("Adaugă în listă", type="primary"):
+            new_list = [t.strip().upper() for t in raw_tickers.replace(",", " ").replace("\n", " ").split(" ") if t.strip()]
+            existing = set(df["Ticker"].astype(str).str.upper().tolist())
+            to_add = [t for t in dict.fromkeys(new_list) if t not in existing]
+            if to_add:
+                new_rows = []
+                with st.spinner("Se preiau detaliile simbolurilor..."):
+                    for t in to_add:
+                        comp, sec, curr = t, "Watchlist", "USD"
+                        try:
+                            info = yf.Ticker(t).info
+                            comp = info.get("shortName") or info.get("longName") or t
+                            sec = info.get("sector") or ("Crypto" if "-USD" in t or "-EUR" in t else "Watchlist")
+                            curr = (info.get("currency") or "USD").upper()
+                            if curr == "GBP" and t.endswith(".L"):
+                                curr = "GBP"
+                        except Exception:
+                            pass
+                        new_rows.append(dict(Ticker=t, Company=comp, Sector=sec, Target_Price=0.0, Currency=curr))
+                add_df = pd.DataFrame(new_rows).rename(columns=dict(Target_Price="Target Price"))
+                df = pd.concat([df, add_df], ignore_index=True)
+                df.to_csv(WATCH_CSV, index=False)
+                st.cache_data.clear()
+                st.success(f"S-au adăugat {len(to_add)} tikere noi!")
+                st.rerun()
+            else:
+                st.warning("Nu s-au găsit tikere noi de adăugat (sau există deja în listă).")
+
     tickers = df["Ticker"].dropna().unique().tolist()
     prices, prev_p, rsi_m, sma_m, _ = fetch_data(tickers, ["EUR", "USD", "GBP"])
     df["Target Price"] = pd.to_numeric(df["Target Price"], errors="coerce").fillna(0.0).astype(float)
@@ -136,20 +175,19 @@ if st.session_state.view_mode == "watch":
     df["Diff_Target"] = np.where((df["Target Price"] > 0) & df["Current"].notna(), (df["Current"] - df["Target Price"]) / df["Target Price"] * 100, np.nan).astype(float)
     df["RSI"] = pd.to_numeric(df["Ticker"].map(rsi_m), errors="coerce").astype(float)
     df["SMA200"] = pd.to_numeric(df["Ticker"].map(sma_m), errors="coerce").astype(float)
-    df["SMA_Pct"] = np.where(df["SMA200"].notna() & (df["SMA200"] != 0), (df["Current"] - df["SMA200"]) / df["SMA200"] * 100, np.nan).astype(float)
+    df["SMA_Pct"] = np.where(df["SMA200"].notna() & (df["SMA200"] != 0), (df["Current Price" if "Current Price" in df.columns else "Current"] - df["SMA200"]) / df["SMA200"] * 100, np.nan).astype(float)
     st.sidebar.info(f"Fișier: `{WATCH_CSV.name}`\n\nSimboluri urmărite: {len(df)}")
     if df.empty:
-        st.info("Lista de urmărire este goală. Adaugă simboluri mai jos (ex: AAPL, NVDA, BTC-EUR, RHM.DE).")
+        st.info("Lista de urmărire este goală. Folosește caseta de mai sus pentru a adăuga mai multe tikere.")
     else:
         disp = df[["Ticker", "Company", "Sector", "Current", "Day_Pct", "Target Price", "Diff_Target", "RSI", "SMA_Pct", "Currency"]].copy()
         disp.columns = ["Tiker", "Companie", "Sector", "Preț curent", "Variație Azi %", "Preț Țintă", "vs Țintă %", "RSI (14)", "vs SMA 200 %", "Monedă"]
         fmt = dict([("Preț curent", f_price), ("Variație Azi %", f_sma), ("Preț Țintă", f_price), ("vs Țintă %", f_sma), ("RSI (14)", f_rsi), ("vs SMA 200 %", f_sma)])
-        styler = disp.style.map(c_pnl, subset=["Variație Azi %", "vs SMA 200 %"]).map(c_rsi, subset=["RSI (14)"]).format(fmt)
+        styler = disp.style.map(c_pnl, subset=["Variație Azi %", "vs SMA 200 %"]).map(c_target, subset=["vs Țintă %"]).map(c_rsi, subset=["RSI (14)"]).format(fmt)
         st.dataframe(styler, use_container_width=True, hide_index=True, height=450, column_config=dict(Tiker=st.column_config.TextColumn("Tiker", pinned=True)))
-    st.subheader(f"Editare listă urmărire ({WATCH_CSV.name})")
-    st.caption("Adaugă simboluri Yahoo Finance (ex: TSLA, KO, BTC-EUR, BATS.L) și prețul țintă la care vrei să cumperi.")
+    st.subheader(f"Editare sau ștergere ({WATCH_CSV.name})")
     edited = st.data_editor(df[w_cols], num_rows="dynamic", use_container_width=True, key="ed_watch")
-    if st.button(f"Salvează lista în {WATCH_CSV.name}"):
+    if st.button(f"Salvează modificările în {WATCH_CSV.name}"):
         edited.to_csv(WATCH_CSV, index=False)
         st.cache_data.clear()
         st.success(f"Salvat în {WATCH_CSV.name}! Reîncarcă pagina.")
@@ -170,35 +208,3 @@ all_curr = sorted(df["Currency"].dropna().unique().tolist()) or ["EUR", "USD"]
 prices, _, rsi_m, sma_m, fx = fetch_data(tickers, list(set(all_curr + ["EUR", "USD", "GBP"])))
 
 for c in ["Shares", "Buy Price", "Current Price", "Dividends EUR"]:
-    df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0).astype(float)
-
-df["Current Price"] = np.where(df["Ticker"].map(prices).notna(), df["Ticker"].map(prices), df["Current Price"]).astype(float)
-df["RSI"] = pd.to_numeric(df["Ticker"].map(rsi_m), errors="coerce").astype(float)
-df["SMA200"] = pd.to_numeric(df["Ticker"].map(sma_m), errors="coerce").astype(float)
-df["SMA_Pct"] = np.where(df["SMA200"].notna() & (df["SMA200"] != 0), (df["Current Price"] - df["SMA200"]) / df["SMA200"] * 100, np.nan).astype(float)
-
-t_curr = st.sidebar.selectbox("Monedă raportare (Total)", ["EUR", "USD", "GBP"])
-c_filt = st.sidebar.selectbox("Filtrare poziții după monedă", ["Toate (Consolidat)"] + all_curr)
-sort_by = st.sidebar.selectbox("Ordonează tabelul după", ["Valoare piață", "Profit Total", "Dividende", "Randament %", "RSI (Crescător)", "vs SMA 200 %", "Tiker"])
-
-t_rate = fx.get(t_curr, 1.0)
-eur_rate = fx.get("EUR", 1.08) / t_rate
-mult = pd.to_numeric(df["Currency"].map(fx), errors="coerce").fillna(1.0).astype(float) / t_rate
-
-df["Inv"] = df["Shares"] * df["Buy Price"] * mult
-df["Mkt"] = df["Shares"] * df["Current Price"] * mult
-df["Div"] = df["Dividends EUR"] * eur_rate
-df["PnL"] = (df["Mkt"] - df["Inv"]) + df["Div"]
-df["Ret"] = np.where(df["Inv"] != 0, df["PnL"] / df["Inv"] * 100, 0.0).astype(float)
-
-view = df.copy() if c_filt == "Toate (Consolidat)" else df[df["Currency"] == c_filt].copy()
-extra_div = (CLOSED_DIVS_EUR * eur_rate) if (not is_kraken and c_filt == "Toate (Consolidat)") else 0.0
-tot_mkt = view["Mkt"].sum()
-view["Wgt"] = np.where(tot_mkt != 0, view["Mkt"] / tot_mkt * 100, 0.0).astype(float)
-
-s_map = dict([("Valoare piață", ("Mkt", False)), ("Profit Total", ("PnL", False)), ("Dividende", ("Div", False)), ("Randament %", ("Ret", False)), ("RSI (Crescător)", ("RSI", True)), ("vs SMA 200 %", ("SMA_Pct", True)), ("Tiker", ("Ticker", True))])
-col_s, asc_s = s_map[sort_by]
-view = view.sort_values(by=col_s, ascending=asc_s, na_position="last")
-
-st.sidebar.info(f"Fișier: `{csv_path.name}`\n\nPrețuri live: {len(prices)}/{len(tickers)}\n\n1 EUR = {fx.get('EUR', 1.08):.4f} USD")
-
