@@ -199,7 +199,7 @@ display_df = view[[
     "Company": "Companie",
     "Sector": "Sector",
     "Shares": "Acțiuni",
-    "Buy Price": "Preț achiziție",
+    "Buy Price": "Preț mediu",
     "Current Price": "Preț curent",
     "Currency": "Monedă",
     "Invested Value": "Valoare investită",
@@ -223,7 +223,7 @@ styled_df = (
     .map(color_pnl_cols, subset=["Profit / Pierdere", "Randament %"])
     .format({
         "Acțiuni": "{:,.4g}",
-        "Preț achiziție": "{:,.2f}",
+        "Preț mediu": "{:,.2f}",
         "Preț curent": "{:,.2f}",
         "Valoare investită": "{:,.2f}",
         "Valoare piață": "{:,.2f}",
