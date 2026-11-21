@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from utils import load_csv, get_meta, fetch_data, fetch_annual_dividends, c_pnl, c_rsi, f_price, f_rsi, f_sma, f_pct, quick_del
+from utils import load_csv, get_meta, fetch_data, fetch_annual_dividends, c_pnl, c_rsi, f_price, f_rsi, f_sma, quick_del
 
 st.set_page_config(page_title="Urmărește", layout="wide")
 CSV_PATH = Path(__file__).resolve().parent.parent / "watchlist.csv"
@@ -77,9 +77,9 @@ c_filt = st.sidebar.selectbox("Filtrare după monedă", ["Toate"] + all_curr)
 sort_by = st.sidebar.selectbox(
     "Ordonează tabelul după",
     [
+        "Randament actual % (Descrescător)",
         "RSI (Crescător - Supravândute)",
         "RSI (Descrescător - Supracumpărate)",
-        "Dividend % (Descrescător)",
         "vs SMA 200 % (Crescător)",
         "vs SMA 200 % (Descrescător)",
         "Preț curent (Descrescător)",
@@ -91,9 +91,9 @@ sort_by = st.sidebar.selectbox(
 view = df.copy() if c_filt == "Toate" else df[df["Currency"] == c_filt].copy()
 
 s_map = dict([
+    ("Randament actual % (Descrescător)", ("Div_Yield", False)),
     ("RSI (Crescător - Supravândute)", ("RSI", True)),
     ("RSI (Descrescător - Supracumpărate)", ("RSI", False)),
-    ("Dividend % (Descrescător)", ("Div_Yield", False)),
     ("vs SMA 200 % (Crescător)", ("SMA_Pct", True)),
     ("vs SMA 200 % (Descrescător)", ("SMA_Pct", False)),
     ("Preț curent (Descrescător)", ("Current", False)),
@@ -115,8 +115,8 @@ def f_div_yield(v):
 
 if not view.empty:
     disp = view[["Ticker", "Company", "Currency", "Sector", "Avg_Price", "Current", "Div_Yield", "RSI", "SMA_Pct"]].copy()
-    disp.columns = ["Tiker", "Companie", "Monedă", "Sector", "Preț mediu", "Preț curent", "Dividend %", "RSI (14)", "vs SMA 200 %"]
-    fmt = dict([("Preț mediu", f_avg_blank), ("Preț curent", f_price), ("Dividend %", f_div_yield), ("RSI (14)", f_rsi), ("vs SMA 200 %", f_sma)])
+    disp.columns = ["Tiker", "Companie", "Monedă", "Sector", "Preț mediu", "Preț curent", "Randament actual %", "RSI (14)", "vs SMA 200 %"]
+    fmt = dict([("Preț mediu", f_avg_blank), ("Preț curent", f_price), ("Randament actual %", f_div_yield), ("RSI (14)", f_rsi), ("vs SMA 200 %", f_sma)])
     styler = disp.style.map(c_pnl, subset=["vs SMA 200 %"]).map(c_rsi, subset=["RSI (14)"]).format(fmt)
     st.dataframe(styler, use_container_width=True, hide_index=True, height=480, column_config=dict(Tiker=st.column_config.TextColumn("Tiker", pinned=True)))
 
