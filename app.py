@@ -61,7 +61,7 @@ def fetch_live_market_data(tickers, currencies):
         try:
             data = yf.download(tickers, period="1y", progress=False)["Close"]
             if isinstance(data, pd.Series):
-                t = tickers[0] if isinstance(tickers, list) else tickers
+                t = tickers if isinstance(tickers, list) else tickers
                 s = data.dropna()
                 if not s.empty:
                     scale = 0.01 if t in uk_pence_tickers else 1.0
@@ -88,7 +88,7 @@ def fetch_live_market_data(tickers, currencies):
         try:
             fx_data = yf.download(fx_tickers, period="5d", progress=False)["Close"]
             if isinstance(fx_data, pd.Series):
-                c = other_curr[0]
+                c = other_curr
                 if not fx_data.dropna().empty:
                     fx_rates[c] = float(fx_data.dropna().iloc[-1])
             else:
@@ -244,30 +244,16 @@ display_df = view[[
     "Pondere %": 2
 })
 
-def color_pnl_cols(val):
-    if pd.isna(val):
-        return "color: #fafafa;"
-    if val > 0:
-        return "color: #00e676; font-weight: bold;"
-    elif val < 0:
-        return "color: #ff5252; font-weight: bold;"
-    return "color: #fafafa;"
+def color_pnl(val):
+    return "color: #00e676; font-weight: bold;" if pd.notna(val) and val > 0 else ("color: #ff5252; font-weight: bold;" if pd.notna(val) and val < 0 else "color: #fafafa;")
 
-def color_rsi_col(val):
-    if pd.isna(val):
-        return "color: #9e9e9e;"
-    if val <= 30:
-        return "color: #00e676; font-weight: bold;"
-    elif val >= 70:
-        return "color: #ff5252; font-weight: bold;"
-    return "color: #fafafa;"
+def color_rsi(val):
+    return "color: #00e676; font-weight: bold;" if pd.notna(val) and val <= 30 else ("color: #ff5252; font-weight: bold;" if pd.notna(val) and val >= 70 else "color: #fafafa;")
 
-def style_sma200_row(row):
-    styles = [""] * len(row)
-    sma = row["SMA 200"]
-    price = row["Preț curent"]
-    if pd.notna(sma) and pd.notna(price):
-        idx = row.index.get_loc("SMA 200")
-        if price > sma:
-            styles[idx] = "color: #00e676; font-weight: bold;"
-        elif price < sma:
+def color_sma(col):
+    return np.where(display_df["SMA 200"].isna(), "color: #9e9e9e;", np.where(display_df["Preț curent"] > display_df["SMA 200"], "color: #00e676; font-weight: bold;", "color: #ff5252; font-weight: bold;"))
+
+styler = display_df.style.map(color_pnl, subset=["Profit / Pierdere", "Randament %"]).map(color_rsi, subset=["RSI (14)"]).apply(color_sma, subset=["SMA 200"])
+
+st.dataframe(styler, use_container_width=True, hide_index=True, height=600)
+
