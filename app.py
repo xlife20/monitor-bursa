@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import yfinance as yf
+import urllib.request
+import json
 from pathlib import Path
 
 st.set_page_config(page_title="Monitor Investiții", layout="wide")
@@ -37,6 +39,40 @@ def load_data(csv_path, cols):
     if not csv_path.exists():
         return pd.DataFrame(columns=cols)
     return pd.read_csv(csv_path)
+
+def get_ticker_meta(symbol):
+    comp, sec, curr = symbol, "Altele", "USD"
+    if symbol.endswith("-EUR") or symbol.endswith(".DE") or symbol.endswith(".MI") or symbol.endswith(".MC"):
+        curr = "EUR"
+    elif symbol.endswith(".L"):
+        curr = "GBP"
+    if "-USD" in symbol or "-EUR" in symbol:
+        sec = "Crypto"
+    try:
+        url = f"https://yahoo.com{symbol}&quotesCount=1&newsCount=0"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=4) as resp:
+            data = json.loads(resp.read().decode())
+            quotes = data.get("quotes", [])
+            if quotes:
+                q = quotes
+                comp = q.get("shortname") or q.get("longname") or comp
+                if q.get("sector"):
+                    sec = q.get("sector")
+                elif q.get("quoteType") == "ETF":
+                    sec = "ETF"
+                elif q.get("quoteType") == "CRYPTOCURRENCY":
+                    sec = "Crypto"
+    except Exception:
+        pass
+    try:
+        fi = yf.Ticker(symbol).fast_info
+        if fi and fi.get("currency"):
+            c_raw = str(fi["currency"]).upper()
+            curr = "GBP" if c_raw == "GBP" else c_raw
+    except Exception:
+        pass
+    return comp, sec, curr
 
 def calc_rsi(s, p=14):
     s = s.dropna()
@@ -153,16 +189,9 @@ if st.session_state.view_mode == "watch":
             to_add = [t for t in dict.fromkeys(new_list) if t not in existing]
             if to_add:
                 new_rows = []
-                with st.spinner("Se preiau detaliile simbolurilor..."):
+                with st.spinner("Se preiau numele companiilor și sectoarele..."):
                     for t in to_add:
-                        comp, sec, curr = t, "Watchlist", "USD"
-                        try:
-                            info = yf.Ticker(t).info
-                            comp = info.get("shortName") or info.get("longName") or t
-                            sec = info.get("sector") or ("Crypto" if "-USD" in t or "-EUR" in t else "Watchlist")
-                            curr = (info.get("currency") or "USD").upper()
-                        except Exception:
-                            pass
+                        comp, sec, curr = get_ticker_meta(t)
                         new_rows.append(dict(Ticker=t, Company=comp, Sector=sec, Target_Price=0.0, Currency=curr))
                 add_df = pd.DataFrame(new_rows).rename(columns=dict(Target_Price="Target Price"))
                 df = pd.concat([df, add_df], ignore_index=True)
@@ -175,6 +204,18 @@ if st.session_state.view_mode == "watch":
 
     quick_delete_widget(df, w_cols, WATCH_CSV, "watch")
 
+    if not df.empty and st.button("🔄 Actualizează automat numele și sectoarele lipsă"):
+        with st.spinner("Se actualizează denumirile companiilor..."):
+            for idx, r in df.iterrows():
+                if str(r["Sector"]) in ["Watchlist", "Altele", "nan", ""] or str(r["Company"]) == str(r["Ticker"]):
+                    comp, sec, curr = get_ticker_meta(str(r["Ticker"]))
+                    df.at[idx, "Company"] = comp
+                    df.at[idx, "Sector"] = sec
+                    df.at[idx, "Currency"] = curr
+            df[w_cols].to_csv(WATCH_CSV, index=False)
+            st.cache_data.clear()
+            st.rerun()
+
     tickers = df["Ticker"].dropna().unique().tolist()
     prices, prev_p, rsi_m, sma_m, _ = fetch_data(tickers, ["EUR", "USD", "GBP"])
     df["Target Price"] = pd.to_numeric(df["Target Price"], errors="coerce").fillna(0.0).astype(float)
@@ -186,23 +227,3 @@ if st.session_state.view_mode == "watch":
     df["SMA200"] = pd.to_numeric(df["Ticker"].map(sma_m), errors="coerce").astype(float)
     df["SMA_Pct"] = np.where(df["SMA200"].notna() & (df["SMA200"] != 0), (df["Current"] - df["SMA200"]) / df["SMA200"] * 100, np.nan).astype(float)
     st.sidebar.info(f"Fișier: `{WATCH_CSV.name}`\n\nSimboluri urmărite: {len(df)}")
-    if df.empty:
-        st.info("Lista de urmărire este goală. Folosește caseta de mai sus pentru a adăuga mai multe tikere.")
-    else:
-        disp = df[["Ticker", "Company", "Sector", "Current", "Day_Pct", "Target Price", "Diff_Target", "RSI", "SMA_Pct", "Currency"]].copy()
-        disp.columns = ["Tiker", "Companie", "Sector", "Preț curent", "Variație Azi %", "Preț Țintă", "vs Țintă %", "RSI (14)", "vs SMA 200 %", "Monedă"]
-        fmt = dict([("Preț curent", f_price), ("Variație Azi %", f_sma), ("Preț Țintă", f_price), ("vs Țintă %", f_sma), ("RSI (14)", f_rsi), ("vs SMA 200 %", f_sma)])
-        styler = disp.style.map(c_pnl, subset=["Variație Azi %", "vs SMA 200 %"]).map(c_target, subset=["vs Țintă %"]).map(c_rsi, subset=["RSI (14)"]).format(fmt)
-        st.dataframe(styler, use_container_width=True, hide_index=True, height=450, column_config=dict(Tiker=st.column_config.TextColumn("Tiker", pinned=True)))
-    st.subheader(f"Editare prețuri țintă ({WATCH_CSV.name})")
-    edited = st.data_editor(df[w_cols], num_rows="dynamic", use_container_width=True, key="ed_watch")
-    if st.button(f"Salvează modificările în {WATCH_CSV.name}"):
-        edited.to_csv(WATCH_CSV, index=False)
-        st.cache_data.clear()
-        st.success(f"Salvat în {WATCH_CSV.name}! Reîncarcă pagina.")
-    st.stop()
-
-is_kraken = (st.session_state.view_mode == "kraken")
-st.title("🪙 Portofoliu Kraken" if is_kraken else "📈 Portofoliu XTB")
-csv_path = KRAKEN_CSV if is_kraken else XTB_CSV
-req = ["Ticker", "Company", "Sector", "Shares", "Buy Price", "Current Price", "Currency", "Dividends EUR"]
