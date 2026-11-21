@@ -84,7 +84,7 @@ if "page" not in st.session_state:
 
 if st.session_state.page == "home":
     st.markdown("<br><br><br><h1 style='text-align: center;'>💼 Monitor Investiții XTB</h1><p style='text-align: center; color: #9e9e9e; font-size: 1.1rem;'>Alege portofoliul pe care dorești să îl accesezi</p><br>", unsafe_allow_html=True)
-    _, col1, col2, _ = st.columns()
+    _, col1, col2, _ = st.columns([1, 2, 2, 1])
     with col1:
         if st.button("📈 Portofoliu Acțiuni & ETF", use_container_width=True, type="primary"):
             st.session_state.page = "stocks"
