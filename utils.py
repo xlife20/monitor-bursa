@@ -7,7 +7,8 @@ import yfinance as yf
 def load_csv(csv_path, cols):
     if not csv_path.exists():
         return pd.DataFrame(columns=cols)
-    return pd.read_csv(csv_path)
+    df = pd.read_csv(csv_path)
+    return df.fillna("") if df.select_dtypes(include=['object', 'string']).shape[1] > 0 else df
 
 def get_meta(symbol):
     comp, sec, curr = symbol, "Acțiuni", "USD"
@@ -87,34 +88,34 @@ def fetch_annual_dividends(tickers):
     return div_rate
 
 def c_pnl(v):
-    if pd.isna(v): return ""
+    if pd.isna(v) or v == "": return ""
     return "color: #00e676; font-weight: bold;" if v > 0 else ("color: #ff5252; font-weight: bold;" if v < 0 else "")
 
 def c_target(v):
-    if pd.isna(v): return ""
+    if pd.isna(v) or v == "": return ""
     return "color: #00e676; font-weight: bold;" if v <= 0 else "color: #ffab40;"
 
 def c_rsi(v):
-    if pd.isna(v): return ""
+    if pd.isna(v) or v == "": return ""
     return "color: #00e676; font-weight: bold;" if v <= 30 else ("color: #ff5252; font-weight: bold;" if v >= 70 else "")
 
 def f_price(v):
-    return "-" if pd.isna(v) else (f"{v:,.4f}" if abs(v) < 2 else f"{v:,.2f}")
+    return "" if (pd.isna(v) or v == "") else (f"{v:,.4f}" if abs(v) < 2 else f"{v:,.2f}")
 
 def f_shares(v):
-    if pd.isna(v): return "-"
+    if pd.isna(v) or v == "": return ""
     s = f"{v:,.6f}".rstrip("0").rstrip(".")
     return s if s else "0"
 
-def f_num2(v): return "-" if pd.isna(v) else f"{v:,.2f}"
-def f_rsi(v): return "-" if pd.isna(v) else f"{v:.1f}%"
-def f_sma(v): return "-" if pd.isna(v) else f"{v:+.2f}%"
-def f_pct(v): return "-" if pd.isna(v) else f"{v:.2f}%"
+def f_num2(v): return "" if (pd.isna(v) or v == "") else f"{v:,.2f}"
+def f_rsi(v): return "" if (pd.isna(v) or v == "") else f"{v:.1f}%"
+def f_sma(v): return "" if (pd.isna(v) or v == "") else f"{v:+.2f}%"
+def f_pct(v): return "" if (pd.isna(v) or v == "") else f"{v:.2f}%"
 
 def quick_del(df_orig, cols, csv_path, kp):
     if df_orig.empty: return
     with st.expander("🗑️ Șterge rapid tikere din listă", expanded=False):
-        opts = df_orig["Ticker"].dropna().unique().tolist()
+        opts = [x for x in df_orig["Ticker"].dropna().unique().tolist() if str(x).strip() != ""]
         to_del = st.multiselect("Selectează tikerele de șters:", opts, key=f"ds_{kp}")
         if st.button("Șterge selectate", key=f"db_{kp}") and to_del:
             df_orig[~df_orig["Ticker"].isin(to_del)][cols].to_csv(csv_path, index=False)
