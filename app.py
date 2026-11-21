@@ -4,79 +4,10 @@ import numpy as np
 import yfinance as yf
 from pathlib import Path
 
-st.set_page_config(page_title="Panou Investiții", layout="wide")
-
-st.markdown("""
-<style>
-    div[data-testid="stMetric"] {
-        background-color: #161b22;
-        border: 1px solid #30363d;
-        padding: 10px 12px;
-        border-radius: 8px;
-    }
-    div[data-testid="stMetricValue"] { font-size: 1.35rem !important; }
-    .custom-card {
-        background-color: #161b22;
-        border: 1px solid #30363d;
-        padding: 10px 12px;
-        border-radius: 8px;
-        height: 100%;
-    }
-    .custom-card-label { font-size: 0.875rem; color: #fafafa; margin-bottom: 4px; }
-    .custom-card-val { font-size: 1.35rem; font-weight: 600; line-height: 1.2; }
-    .custom-card-sub { font-size: 0.8rem; margin-top: 4px; color: #9e9e9e; }
-    .tbl-wrap {
-        width: 100%;
-        max-height: 550px;
-        overflow: auto;
-        border: 1px solid #30363d;
-        border-radius: 8px;
-        background-color: #0e1117;
-    }
-    .tbl-wrap table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 14px;
-        color: #fafafa;
-    }
-    .tbl-wrap th {
-        position: sticky;
-        top: 0;
-        background-color: #161b22;
-        color: #fafafa;
-        z-index: 2;
-        padding: 10px 8px;
-        text-align: left;
-        border-bottom: 2px solid #30363d;
-        white-space: nowrap;
-    }
-    .tbl-wrap td {
-        padding: 8px;
-        border-bottom: 1px solid #21262d;
-        white-space: nowrap;
-    }
-    .tbl-wrap tr:hover td { background-color: #1c2128; }
-</style>
-""", unsafe_allow_html=True)
+st.set_page_config(page_title="Monitor Investiții XTB", layout="wide")
 
 CSV_PATH = Path(__file__).with_name("portfolio.csv")
 CLOSED_DIVS_EUR = 18.24
-
-if "page" not in st.session_state:
-    st.session_state.page = "home"
-
-if st.session_state.page == "home":
-    st.markdown("<br><br><br><h1 style='text-align: center;'>💼 Monitor Investiții XTB</h1><p style='text-align: center; color: #9e9e9e; font-size: 1.1rem;'>Alege portofoliul pe care dorești să îl accesezi</p><br>", unsafe_allow_html=True)
-    _, col1, col2, _ = st.columns(4)
-    with col1:
-        if st.button("📈 Portofoliu Acțiuni & ETF", use_container_width=True, type="primary"):
-            st.session_state.page = "stocks"
-            st.rerun()
-    with col2:
-        if st.button("🪙 Portofoliu Criptomonede", use_container_width=True, type="primary"):
-            st.session_state.page = "crypto"
-            st.rerun()
-    st.stop()
 
 @st.cache_data
 def load_data():
@@ -126,107 +57,156 @@ def fetch_data(tickers, currencies):
         fx[c] = fx.get(c, fb.get(c, 1.0))
     return prices, rsi_m, sma_m, fx
 
-top_nav, _ = st.columns([1.5, 6])
-with top_nav:
-    if st.button("⬅️ Meniu Principal", use_container_width=True):
-        st.session_state.page = "home"
+def render_portfolio(is_crypto_page):
+    if st.button("⬅️ Înapoi la Meniul Principal"):
+        st.switch_page(home_page)
+
+    if is_crypto_page:
+        st.title("🪙 Portofoliu Criptomonede")
+        st.caption("ETN-uri Crypto din XTB și criptomonede live prin Yahoo Finance.")
+    else:
+        st.title("📈 Portofoliu Acțiuni & ETF-uri")
+        st.caption("Prețuri, indicatori tehnici (RSI 14, vs SMA 200 %), cursuri valutare live și dividende nete din XTB.")
+
+    full_df = load_data()
+    if "Dividends EUR" not in full_df.columns: full_df["Dividends EUR"] = 0.0
+    req = ["Ticker", "Company", "Sector", "Shares", "Buy Price", "Current Price", "Currency", "Dividends EUR"]
+
+    crypto_mask = full_df["Sector"].astype(str).str.contains("Crypto", case=False, na=False) | full_df["Ticker"].astype(str).str.endswith("-USD")
+    df = full_df[crypto_mask].copy() if is_crypto_page else full_df[~crypto_mask].copy()
+
+    if st.sidebar.button("🔄 Actualizează prețurile live"):
+        st.cache_data.clear()
         st.rerun()
 
-is_crypto_page = (st.session_state.page == "crypto")
+    tickers = df["Ticker"].dropna().unique().tolist()
+    all_curr = sorted(df["Currency"].dropna().unique().tolist()) or ["EUR", "USD"]
+    prices, rsi_m, sma_m, fx = fetch_data(tickers, list(set(all_curr + ["EUR", "USD", "GBP"])))
 
-if is_crypto_page:
-    st.title("🪙 Portofoliu Criptomonede")
-    st.caption("ETN-uri Crypto din XTB și criptomonede live prin Yahoo Finance.")
-else:
-    st.title("📈 Portofoliu Acțiuni & ETF-uri")
-    st.caption("Prețuri, indicatori tehnici (RSI 14, vs SMA 200 %), cursuri valutare live și dividende nete din XTB.")
+    for c in ["Shares", "Buy Price", "Current Price", "Dividends EUR"]:
+        df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
 
-full_df = load_data()
-if "Dividends EUR" not in full_df.columns: full_df["Dividends EUR"] = 0.0
-req = ["Ticker", "Company", "Sector", "Shares", "Buy Price", "Current Price", "Currency", "Dividends EUR"]
+    df["Current Price"] = np.where(df["Ticker"].map(prices).notna(), df["Ticker"].map(prices), df["Current Price"])
+    df["RSI"] = df["Ticker"].map(rsi_m)
+    df["SMA200"] = df["Ticker"].map(sma_m)
+    df["SMA_Pct"] = np.where(df["SMA200"].notna() & (df["SMA200"] != 0), (df["Current Price"] - df["SMA200"]) / df["SMA200"] * 100, np.nan)
 
-crypto_mask = full_df["Sector"].astype(str).str.contains("Crypto", case=False, na=False) | full_df["Ticker"].astype(str).str.endswith("-USD")
-df = full_df[crypto_mask].copy() if is_crypto_page else full_df[~crypto_mask].copy()
+    st.sidebar.header("Setări afișare")
+    t_curr = st.sidebar.selectbox("Monedă raportare (Total)", ["EUR", "USD", "GBP"])
+    c_filt = st.sidebar.selectbox("Filtrare poziții după monedă", ["Toate (Consolidat)"] + all_curr)
+    sort_by = st.sidebar.selectbox("Ordonează tabelul după", ["Valoare piață", "Profit Total", "Dividende", "Randament %", "RSI (Crescător)", "vs SMA 200 %", "Tiker"])
 
-if st.sidebar.button("🔄 Actualizează prețurile live"):
-    st.cache_data.clear()
-    st.rerun()
+    t_rate = fx.get(t_curr, 1.0)
+    eur_rate = fx.get("EUR", 1.08) / t_rate
+    mult = df["Currency"].map(fx).fillna(1.0) / t_rate
 
-tickers = df["Ticker"].dropna().unique().tolist()
-all_curr = sorted(df["Currency"].dropna().unique().tolist()) or ["EUR", "USD"]
-prices, rsi_m, sma_m, fx = fetch_data(tickers, list(set(all_curr + ["EUR", "USD", "GBP"])))
+    df["Inv"] = df["Shares"] * df["Buy Price"] * mult
+    df["Mkt"] = df["Shares"] * df["Current Price"] * mult
+    df["Div"] = df["Dividends EUR"] * eur_rate
+    df["PnL"] = (df["Mkt"] - df["Inv"]) + df["Div"]
+    df["Ret"] = np.where(df["Inv"] != 0, df["PnL"] / df["Inv"] * 100, 0)
 
-for c in ["Shares", "Buy Price", "Current Price", "Dividends EUR"]:
-    df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
+    view = df.copy() if c_filt == "Toate (Consolidat)" else df[df["Currency"] == c_filt].copy()
+    extra_div = (CLOSED_DIVS_EUR * eur_rate) if (not is_crypto_page and c_filt == "Toate (Consolidat)") else 0.0
+    tot_mkt = view["Mkt"].sum()
+    view["Wgt"] = np.where(tot_mkt != 0, view["Mkt"] / tot_mkt * 100, 0)
 
-df["Current Price"] = np.where(df["Ticker"].map(prices).notna(), df["Ticker"].map(prices), df["Current Price"])
-df["RSI"] = df["Ticker"].map(rsi_m)
-df["SMA200"] = df["Ticker"].map(sma_m)
-df["SMA_Pct"] = np.where(df["SMA200"].notna() & (df["SMA200"] != 0), (df["Current Price"] - df["SMA200"]) / df["SMA200"] * 100, np.nan)
+    s_map = {"Valoare piață": ("Mkt", False), "Profit Total": ("PnL", False), "Dividende": ("Div", False), "Randament %": ("Ret", False), "RSI (Crescător)": ("RSI", True), "vs SMA 200 %": ("SMA_Pct", True), "Tiker": ("Ticker", True)}
+    col_s, asc_s = s_map[sort_by]
+    view = view.sort_values(by=col_s, ascending=asc_s, na_position="last")
 
-st.sidebar.header("Setări afișare")
-t_curr = st.sidebar.selectbox("Monedă raportare (Total)", ["EUR", "USD", "GBP"])
-c_filt = st.sidebar.selectbox("Filtrare poziții după monedă", ["Toate (Consolidat)"] + all_curr)
-sort_by = st.sidebar.selectbox("Ordonează tabelul după", ["Valoare piață", "Profit Total", "Dividende", "Randament %", "RSI (Crescător)", "vs SMA 200 %", "Tiker"])
+    st.sidebar.info(f"Prețuri live: {len(prices)}/{len(tickers)}\n\n1 EUR = {fx.get('EUR', 1.08):.4f} USD\n\n1 GBP = {fx.get('GBP', 1.27)/fx.get('EUR', 1.08):.4f} EUR")
 
-t_rate = fx.get(t_curr, 1.0)
-eur_rate = fx.get("EUR", 1.08) / t_rate
-mult = df["Currency"].map(fx).fillna(1.0) / t_rate
+    inv_s, mkt_s, div_s = view["Inv"].sum(), view["Mkt"].sum(), view["Div"].sum() + extra_div
+    gross_profit = view[view["PnL"] > 0]["PnL"].sum() + extra_div
+    gross_loss = view[view["PnL"] < 0]["PnL"].sum()
 
-df["Inv"] = df["Shares"] * df["Buy Price"] * mult
-df["Mkt"] = df["Shares"] * df["Current Price"] * mult
-df["Div"] = df["Dividends EUR"] * eur_rate
-df["PnL"] = (df["Mkt"] - df["Inv"]) + df["Div"]
-df["Ret"] = np.where(df["Inv"] != 0, df["PnL"] / df["Inv"] * 100, 0)
+    if is_crypto_page:
+        c1, c2, c3, c5, c6 = st.columns(5)
+        c1.metric("Poziții", f"{len(view)}")
+        c2.metric("Capital investit", f"{inv_s:,.2f} {t_curr}")
+        c3.metric("Valoare piață", f"{mkt_s:,.2f} {t_curr}")
+    else:
+        c1, c2, c3, c4, c5, c6 = st.columns(6)
+        c1.metric("Poziții", f"{len(view)}")
+        c2.metric("Capital investit", f"{inv_s:,.2f} {t_curr}")
+        c3.metric("Valoare piață", f"{mkt_s:,.2f} {t_curr}")
+        c4.metric("Dividende nete", f"{div_s:,.2f} {t_curr}")
 
-view = df.copy() if c_filt == "Toate (Consolidat)" else df[df["Currency"] == c_filt].copy()
-extra_div = (CLOSED_DIVS_EUR * eur_rate) if (not is_crypto_page and c_filt == "Toate (Consolidat)") else 0.0
-tot_mkt = view["Mkt"].sum()
-view["Wgt"] = np.where(tot_mkt != 0, view["Mkt"] / tot_mkt * 100, 0)
+    c5.metric("Profit Total (Poz.)", f"+{gross_profit:,.2f} {t_curr}", f"{len(view[view['PnL'] > 0])} pe plus", delta_color="normal")
+    c6.metric("Pierdere Totală (Neg.)", f"{gross_loss:,.2f} {t_curr}", f"-{len(view[view['PnL'] < 0])} pe minus", delta_color="normal")
 
-s_map = {"Valoare piață": ("Mkt", False), "Profit Total": ("PnL", False), "Dividende": ("Div", False), "Randament %": ("Ret", False), "RSI (Crescător)": ("RSI", True), "vs SMA 200 %": ("SMA_Pct", True), "Tiker": ("Ticker", True)}
-col_s, asc_s = s_map[sort_by]
-view = view.sort_values(by=col_s, ascending=asc_s, na_position="last")
+    st.subheader(f"Portofoliu (Valori convertite în {t_curr})")
 
-st.sidebar.info(f"Prețuri live: {len(prices)}/{len(tickers)}\n\n1 EUR = {fx.get('EUR', 1.08):.4f} USD\n\n1 GBP = {fx.get('GBP', 1.27)/fx.get('EUR', 1.08):.4f} EUR")
+    cols = ["Ticker", "Company", "Sector", "Shares", "Buy Price", "RSI", "SMA_Pct", "Current Price", "Currency", "Inv", "Mkt"]
+    if not is_crypto_page:
+        cols.append("Div")
+    cols += ["PnL", "Ret", "Wgt"]
 
-inv_s, mkt_s, div_s = view["Inv"].sum(), view["Mkt"].sum(), view["Div"].sum() + extra_div
-gross_profit = view[view["PnL"] > 0]["PnL"].sum() + extra_div
-gross_loss = view[view["PnL"] < 0]["PnL"].sum()
-net_pnl = gross_profit + gross_loss
+    disp = view[cols].copy()
+    names = ["Tiker", "Companie", "Sector", "Acțiuni", "Preț mediu", "RSI (14)", "vs SMA 200 %", "Preț curent", "Monedă", "Valoare investită", "Valoare piață"]
+    if not is_crypto_page:
+        names.append("Dividende")
+    names += ["Profit / Pierdere", "Randament %", "Pondere %"]
+    disp.columns = names
 
-def card_html(label, val, color, sub):
-    return f"<div class='custom-card'><div class='custom-card-label'>{label}</div><div class='custom-card-val' style='color:{color};'>{val}</div><div class='custom-card-sub'>{sub}</div></div>"
+    disp = disp.round({"Acțiuni": 4, "Preț mediu": 2, "RSI (14)": 1, "vs SMA 200 %": 2, "Preț curent": 2, "Valoare investită": 2, "Valoare piață": 2, "Dividende": 2, "Profit / Pierdere": 2, "Randament %": 2, "Pondere %": 2})
 
-if is_crypto_page:
-    c1, c2, c3, c5, c6 = st.columns([0.7, 1.2, 1.2, 1.2, 1.2])
-    c1.metric("Poziții", f"{len(view)}")
-    c2.metric("Capital investit", f"{inv_s:,.2f} {t_curr}")
-    c3.metric("Valoare piață", f"{mkt_s:,.2f} {t_curr}")
-else:
-    c1, c2, c3, c4, c5, c6 = st.columns([0.7, 1.15, 1.15, 1.15, 1.15, 1.15])
-    c1.metric("Poziții", f"{len(view)}")
-    c2.metric("Capital investit", f"{inv_s:,.2f} {t_curr}")
-    c3.metric("Valoare piață", f"{mkt_s:,.2f} {t_curr}")
-    c4.metric("Dividende nete", f"{div_s:,.2f} {t_curr}", f"+{extra_div:,.2f} închise" if extra_div > 0 else None)
+    def c_pnl(v):
+        if pd.isna(v): return ""
+        return "color: #00e676; font-weight: bold;" if v > 0 else ("color: #ff5252; font-weight: bold;" if v < 0 else "")
 
-with c5:
-    st.markdown(card_html("Profit Total (Poz.)", f"+{gross_profit:,.2f} {t_curr}", "#00e676", f"Net: {net_pnl:+.2f} {t_curr}"), unsafe_allow_html=True)
+    def c_rsi(v):
+        if pd.isna(v): return ""
+        return "color: #00e676; font-weight: bold;" if v <= 30 else ("color: #ff5252; font-weight: bold;" if v >= 70 else "")
 
-with c6:
-    st.markdown(card_html("Pierdere Totală (Neg.)", f"{gross_loss:,.2f} {t_curr}", "#ff5252", f"{len(view[view['PnL'] < 0])} poziții pe minus"), unsafe_allow_html=True)
+    styler = disp.style.map(c_pnl, subset=["Profit / Pierdere", "Randament %", "vs SMA 200 %"]).map(c_rsi, subset=["RSI (14)"])
 
-st.subheader(f"Portofoliu (Valori convertite în {t_curr})")
+    st.dataframe(
+        styler,
+        use_container_width=True,
+        hide_index=True,
+        height=550,
+        column_config={"Tiker": st.column_config.TextColumn("Tiker", pinned=True)}
+    )
 
-t_df = pd.DataFrame()
-t_df["Tiker"] = "<b>" + view["Ticker"] + "</b>"
-t_df["Companie"] = view["Company"]
-t_df["Sector"] = view["Sector"]
-t_df["Acțiuni"] = view["Shares"].map(lambda x: f"{x:,.4g}")
-t_df["Preț mediu"] = view["Buy Price"].map(lambda x: f"{x:,.2f}")
-t_df["RSI (14)"] = view["RSI"].map(lambda x: "-" if pd.isna(x) else f"<span style='color:{'#00e676' if x<=30 else ('#ff5252' if x>=70 else '#fafafa')};font-weight:bold'>{x:.1f}</span>")
-t_df["vs SMA 200 %"] = view["SMA_Pct"].map(lambda x: "-" if pd.isna(x) else f"<span style='color:{'#00e676' if x>0 else '#ff5252'};font-weight:bold'>{x:+.2f}%</span>")
-t_df["Preț curent"] = view["Current Price"].map(lambda x: f"{x:,.2f}")
-t_df["Monedă"] = view["Currency"]
-t_df["Valoare investită"] = view["Inv"].map(lambda x: f"{x:,.2f}")
-t_df["Valoare piață"] = view["Mkt"].map(lambda x: f"{x:,.2f}")
+    st.write("")
+    l1, r1 = st.columns(2)
+    with l1:
+        st.subheader(f"Profit / Pierdere Total ({t_curr})")
+        if not view.empty:
+            p_df = view.set_index("Ticker")[["PnL"]].assign(Color=np.where(view["PnL"] >= 0, "#00e676", "#ff5252"))
+            st.bar_chart(p_df, y="PnL", color="Color")
+    with r1:
+        if is_crypto_page:
+            st.subheader(f"Valoare de piață ({t_curr})")
+            if not view.empty: st.bar_chart(view.set_index("Ticker")["Mkt"], color="#29b6f6")
+        else:
+            st.subheader(f"Dividende încasate ({t_curr})")
+            dv = view[view["Div"] > 0].sort_values(by="Div", ascending=False)
+            if not dv.empty: st.bar_chart(dv.set_index("Ticker")["Div"], color="#ffd54f")
+
+    if not is_crypto_page:
+        l2, r2 = st.columns(2)
+        with l2:
+            st.subheader(f"Valoare de piață ({t_curr})")
+            if not view.empty: st.bar_chart(view.set_index("Ticker")["Mkt"], color="#29b6f6")
+        with r2:
+            st.subheader(f"Alocare pe sectoare ({t_curr})")
+            sv = view.groupby("Sector")["Mkt"].sum()
+            if not sv.empty: st.bar_chart(sv, color="#ab47bc")
+
+    st.subheader("Editare poziții (în moneda originală)")
+    edited = st.data_editor(view[req], num_rows="dynamic", use_container_width=True, key=f"ed_{is_crypto_page}")
+    if st.button("Salvează modificările în portfolio.csv"):
+        other_part = full_df[~crypto_mask] if is_crypto_page else full_df[crypto_mask]
+        if c_filt != "Toate (Consolidat)":
+            same_part_other_curr = df[df["Currency"] != c_filt][req]
+            up = pd.concat([other_part[req], same_part_other_curr, edited], ignore_index=True)
+        else:
+            up = pd.concat([other_part[req], edited], ignore_index=True)
+        up.to_csv(CSV_PATH, index=False)
+        st.cache_data.clear()
+        st.success("Salvat! Reîncarcă pagina.")
+
+def page_home():
