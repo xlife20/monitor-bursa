@@ -95,7 +95,7 @@ c_filt = st.sidebar.selectbox("Filtrare după monedă", ["Toate"] + all_curr)
 sort_by = st.sidebar.selectbox(
     "Ordonează tabelul după",
     [
-        "Randament actual % (Descrescător)",
+        "Divident AN% (Descrescător)",
         "RSI (Crescător - Supravândute)",
         "RSI (Descrescător - Supracumpărate)",
         "vs SMA 200 % (Crescător)",
@@ -109,7 +109,7 @@ sort_by = st.sidebar.selectbox(
 view = df.copy() if c_filt == "Toate" else df[df["Currency"] == c_filt].copy()
 
 s_map = dict([
-    ("Randament actual % (Descrescător)", ("Div_Yield", False)),
+    ("Divident AN% (Descrescător)", ("Div_Yield", False)),
     ("RSI (Crescător - Supravândute)", ("RSI", True)),
     ("RSI (Descrescător - Supracumpărate)", ("RSI", False)),
     ("vs SMA 200 % (Crescător)", ("SMA_Pct", True)),
@@ -133,8 +133,8 @@ def f_div_yield(v):
 
 if not view.empty:
     disp = view[["Ticker", "Company", "Currency", "Sector", "Avg_Price", "Current", "Div_Yield", "RSI", "SMA_Pct"]].copy()
-    disp.columns = ["Tiker", "Companie", "Monedă", "Sector", "Preț mediu", "Preț curent", "Randament actual %", "RSI (14)", "vs SMA 200 %"]
-    fmt = dict([("Preț mediu", f_avg_blank), ("Preț curent", f_price), ("Randament actual %", f_div_yield), ("RSI (14)", f_rsi), ("vs SMA 200 %", f_sma)])
+    disp.columns = ["Tiker", "Companie", "Monedă", "Sector", "Preț mediu", "Preț curent", "Divident AN%", "RSI (14)", "vs SMA 200 %"]
+    fmt = dict([("Preț mediu", f_avg_blank), ("Preț curent", f_price), ("Divident AN%", f_div_yield), ("RSI (14)", f_rsi), ("vs SMA 200 %", f_sma)])
     styler = disp.style.map(c_pnl, subset=["vs SMA 200 %"]).map(c_rsi, subset=["RSI (14)"]).format(fmt)
     st.dataframe(styler, use_container_width=True, hide_index=True, height=480, column_config=dict(Tiker=st.column_config.TextColumn("Tiker", pinned=True)))
 
