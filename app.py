@@ -25,54 +25,48 @@ st.markdown("""
     .custom-card-label { font-size: 0.875rem; color: #fafafa; margin-bottom: 4px; }
     .custom-card-val { font-size: 1.35rem; font-weight: 600; line-height: 1.2; }
     .custom-card-sub { font-size: 0.8rem; margin-top: 4px; color: #9e9e9e; }
-    .tbl-box {
-        height: 550px;
-        overflow: auto;
+    .tbl-wrap {
+        width: 100%;
+        max-height: 550px;
+        overflow-x: scroll;
+        overflow-y: scroll;
         border: 1px solid #30363d;
         border-radius: 8px;
-        background: #0e1117;
-        cursor: grab;
-        user-select: none;
+        background-color: #0e1117;
+        display: block;
     }
-    .tbl-box:active { cursor: grabbing; }
-    .tbl-box table {
+    .tbl-wrap table {
         width: 100%;
-        border-collapse: separate;
-        border-spacing: 0;
+        border-collapse: collapse;
         font-size: 14px;
         color: #fafafa;
+        background-color: #0e1117;
     }
-    .tbl-box thead th {
+    .tbl-wrap th {
         position: sticky;
         top: 0;
-        background: #161b22;
-        z-index: 2;
+        background-color: #161b22;
+        color: #fafafa;
+        z-index: 3;
         padding: 10px 8px;
         text-align: left;
         border-bottom: 2px solid #30363d;
         white-space: nowrap;
     }
-    .tbl-box tbody td {
+    .tbl-wrap td {
         padding: 8px;
         border-bottom: 1px solid #21262d;
         white-space: nowrap;
-        background: #0e1117;
+        background-color: #0e1117;
     }
-    .tbl-box tbody tr:hover td { background: #1c2128; }
-    .tbl-box thead th:first-child {
+    .tbl-wrap th:first-child, .tbl-wrap td:first-child {
         position: sticky;
         left: 0;
-        z-index: 4;
+        background-color: #161b22;
         border-right: 1px solid #30363d;
     }
-    .tbl-box tbody td:first-child {
-        position: sticky;
-        left: 0;
-        z-index: 3;
-        background: #161b22;
-        border-right: 1px solid #30363d;
-    }
-    .tbl-box tbody tr:hover td:first-child { background: #1c2128; }
+    .tbl-wrap th:first-child { z-index: 5; }
+    .tbl-wrap td:first-child { z-index: 2; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -84,7 +78,7 @@ if "page" not in st.session_state:
 
 if st.session_state.page == "home":
     st.markdown("<br><br><br><h1 style='text-align: center;'>💼 Monitor Investiții XTB</h1><p style='text-align: center; color: #9e9e9e; font-size: 1.1rem;'>Alege portofoliul pe care dorești să îl accesezi</p><br>", unsafe_allow_html=True)
-    _, col1, col2, _ = st.columns([1, 2, 2, 1])
+    _, col1, col2, _ = st.columns(4)
     with col1:
         if st.button("📈 Portofoliu Acțiuni & ETF", use_container_width=True, type="primary"):
             st.session_state.page = "stocks"
@@ -143,9 +137,11 @@ def fetch_data(tickers, currencies):
         fx[c] = fx.get(c, fb.get(c, 1.0))
     return prices, rsi_m, sma_m, fx
 
-if st.sidebar.button("⬅️ Înapoi la Meniul Principal", use_container_width=True):
-    st.session_state.page = "home"
-    st.rerun()
+top_nav, _ = st.columns([1.5, 6])
+with top_nav:
+    if st.button("⬅️ Meniu Principal", use_container_width=True):
+        st.session_state.page = "home"
+        st.rerun()
 
 is_crypto_page = (st.session_state.page == "crypto")
 
@@ -239,3 +235,4 @@ t_df["Companie"] = view["Company"]
 t_df["Sector"] = view["Sector"]
 t_df["Acțiuni"] = view["Shares"].map(lambda x: f"{x:,.4g}")
 t_df["Preț mediu"] = view["Buy Price"].map(lambda x: f"{x:,.2f}")
+t_df["RSI (14)"] = view["RSI"].map(lambda x: "-" if pd.isna(x) else f"<span style='color:{'#00e676' if x<=30 else ('#ff5252' if x>=70 else '#fafafa')};font-weight:bold'>{x:.1f}</span>")
