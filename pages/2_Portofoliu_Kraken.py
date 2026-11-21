@@ -2,20 +2,71 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from utils import load_csv, fetch_data, c_pnl, c_rsi, f_price, f_shares, f_num2, f_rsi, f_sma, f_pct, clean_table, quick_del
+from utils import load_csv, save_csv_permanent, get_meta, fetch_data, c_pnl, c_rsi, f_price, f_shares, f_num2, f_rsi, f_sma, f_pct, clean_table, quick_del
 
 st.set_page_config(page_title="Portofoliu Kraken", layout="wide")
 CSV_PATH = Path(__file__).resolve().parent.parent / "portfolio_kraken.csv"
 
-if st.button("⬅️ Meniu Principal"):
+def parse_kraken_trades(uploaded_file):
+    kdf = pd.read_csv(uploaded_file)
+    if "pair" not in kdf.columns or "vol" not in kdf.columns or "cost" not in kdf.columns:
+        return pd.DataFrame()
+    kdf["vol"] = pd.to_numeric(kdf["vol"], errors="coerce").fillna(0.0)
+    kdf["cost"] = pd.to_numeric(kdf["cost"], errors="coerce").fillna(0.0)
+    kdf["fee"] = pd.to_numeric(kdf.get("fee", 0.0), errors="coerce").fillna(0.0)
+    kdf["type"] = kdf.get("type", "buy").astype(str).str.lower()
+
+    rows = []
+    for pair, grp in kdf.groupby("pair"):
+        clean_pair = str(pair).replace("/", "-").replace("XBT", "BTC").upper()
+        curr = clean_pair.split("-")[-1] if "-" in clean_pair else "EUR"
+        buys = grp[grp["type"] == "buy"]
+        sells = grp[grp["type"] == "sell"]
+        net_vol = buys["vol"].sum() - sells["vol"].sum()
+        if net_vol <= 1e-8:
+            continue
+        total_buy_cost = (buys["cost"] + buys["fee"]).sum()
+        total_buy_vol = buys["vol"].sum()
+        avg_price = (total_buy_cost / total_buy_vol) if total_buy_vol > 0 else 0.0
+        comp, _, _ = get_meta(clean_pair)
+        rows.append({
+            "Ticker": clean_pair, "Company": comp, "Sector": "Crypto",
+            "Shares": round(net_vol, 8), "Buy Price": round(avg_price, 4), "Current Price": round(avg_price, 4),
+            "Currency": curr, "Dividends EUR": 0.0
+        })
+    return pd.DataFrame(rows)
+
+if "show_imp_krk" not in st.session_state:
+    st.session_state.show_imp_krk = False
+
+nav1, nav2, _ = st.columns([1.2, 1.3, 5.5])
+if nav1.button("⬅️ Meniu Principal", use_container_width=True):
     st.switch_page("app.py")
+if nav2.button("📥 Importă Kraken", use_container_width=True):
+    st.session_state.show_imp_krk = not st.session_state.show_imp_krk
+
 if st.sidebar.button("🔄 Actualizează prețurile live"):
     st.cache_data.clear()
     st.rerun()
 
-st.title("🪙 Portofoliu Kraken")
 req = ["Ticker", "Company", "Sector", "Shares", "Buy Price", "Current Price", "Currency", "Dividends EUR"]
 df = load_csv(CSV_PATH, req).copy()
+
+if st.session_state.show_imp_krk:
+    with st.container(border=True):
+        up_krk = st.file_uploader("Încarcă fișierul CSV 'Trades' descărcat din Kraken:", type=["csv"], key="up_krk")
+        if up_krk is not None and st.button("Procesează și Salvează Permanent", type="primary", key="btn_imp_krk"):
+            new_kdf = parse_kraken_trades(up_krk)
+            if not new_kdf.empty:
+                ok = save_csv_permanent(new_kdf[req], CSV_PATH)
+                st.session_state.show_imp_krk = False
+                st.cache_data.clear()
+                st.success("Importat și salvat permanent pe GitHub!" if ok else "Importat local!")
+                st.rerun()
+            else:
+                st.error("Fișierul nu conține tranzacții Kraken valide.")
+
+st.title("🪙 Portofoliu Kraken")
 
 tickers = [x for x in df["Ticker"].dropna().unique().tolist() if str(x).strip() != ""]
 all_curr = sorted([x for x in df["Currency"].dropna().unique().tolist() if str(x).strip() != ""]) or ["EUR", "USD"]
@@ -78,6 +129,6 @@ if not view.empty:
 st.subheader("Editare poziții (portfolio_kraken.csv)")
 edited = st.data_editor(view[req], num_rows="dynamic", use_container_width=True, key="ed_kraken")
 if st.button("Salvează modificările în portfolio_kraken.csv"):
-    edited.to_csv(CSV_PATH, index=False)
+    ok = save_csv_permanent(edited, CSV_PATH)
     st.cache_data.clear()
-    st.success("Salvat!")
+    st.success("Salvat permanent pe GitHub!" if ok else "Salvat local!")
