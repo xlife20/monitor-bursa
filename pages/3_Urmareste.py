@@ -22,10 +22,15 @@ for c in w_cols:
     if c not in df.columns:
         df[c] = ""
 
-col_imp, col_add = st.columns([1.3, 2.7])
+xtb_df = load_csv(XTB_CSV, ["Ticker", "Company", "Currency", "Sector", "Buy Price"]).copy()
+avg_price_map = dict()
+if not xtb_df.empty and "Buy Price" in xtb_df.columns:
+    xtb_df["Buy Price"] = pd.to_numeric(xtb_df["Buy Price"], errors="coerce")
+    avg_price_map = xtb_df.dropna(subset=["Ticker", "Buy Price"]).set_index("Ticker")["Buy Price"].to_dict()
+
+col_imp, _ = st.columns([1.4, 2.6])
 with col_imp:
     if st.button("📥 Importă companiile din Portofoliu XTB", use_container_width=True):
-        xtb_df = load_csv(XTB_CSV, ["Ticker", "Company", "Currency", "Sector"]).copy()
         if not xtb_df.empty:
             ex = set(df["Ticker"].astype(str).str.upper().tolist())
             new_from_xtb = xtb_df[~xtb_df["Ticker"].astype(str).str.upper().isin(ex)][w_cols]
@@ -56,15 +61,16 @@ quick_del(df, w_cols, CSV_PATH, "watch")
 
 tickers = df["Ticker"].dropna().unique().tolist()
 prices, _, rsi_m, sma_m, _ = fetch_data(tickers, ["EUR", "USD", "GBP"])
+df["Avg_Price"] = pd.to_numeric(df["Ticker"].map(avg_price_map), errors="coerce").astype(float)
 df["Current"] = pd.to_numeric(df["Ticker"].map(prices), errors="coerce").astype(float)
 df["RSI"] = pd.to_numeric(df["Ticker"].map(rsi_m), errors="coerce").astype(float)
 df["SMA200"] = pd.to_numeric(df["Ticker"].map(sma_m), errors="coerce").astype(float)
 df["SMA_Pct"] = np.where(df["SMA200"].notna() & (df["SMA200"] != 0), (df["Current"] - df["SMA200"]) / df["SMA200"] * 100, np.nan).astype(float)
 
 if not df.empty:
-    disp = df[["Ticker", "Company", "Currency", "Sector", "Current", "RSI", "SMA_Pct"]].copy()
-    disp.columns = ["Tiker", "Companie", "Monedă", "Sector", "Preț curent", "RSI (14)", "vs SMA 200 %"]
-    fmt = dict([("Preț curent", f_price), ("RSI (14)", f_rsi), ("vs SMA 200 %", f_sma)])
+    disp = df[["Ticker", "Company", "Currency", "Sector", "Avg_Price", "Current", "RSI", "SMA_Pct"]].copy()
+    disp.columns = ["Tiker", "Companie", "Monedă", "Sector", "Preț mediu", "Preț curent", "RSI (14)", "vs SMA 200 %"]
+    fmt = dict([("Preț mediu", f_price), ("Preț curent", f_price), ("RSI (14)", f_rsi), ("vs SMA 200 %", f_sma)])
     styler = disp.style.map(c_pnl, subset=["vs SMA 200 %"]).map(c_rsi, subset=["RSI (14)"]).format(fmt)
     st.dataframe(styler, use_container_width=True, hide_index=True, height=450, column_config=dict(Tiker=st.column_config.TextColumn("Tiker", pinned=True)))
 
