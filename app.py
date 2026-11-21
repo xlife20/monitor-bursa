@@ -230,6 +230,18 @@ display_df = view[[
     "Total P/L": "Profit / Pierdere",
     "Total Return %": "Randament %",
     "Weight %": "Pondere %"
+}).round({
+    "Acțiuni": 4,
+    "Preț mediu": 2,
+    "RSI (14)": 1,
+    "SMA 200": 2,
+    "Preț curent": 2,
+    "Valoare investită": 2,
+    "Valoare piață": 2,
+    "Dividende": 2,
+    "Profit / Pierdere": 2,
+    "Randament %": 2,
+    "Pondere %": 2
 })
 
 def color_pnl_cols(val):
@@ -259,10 +271,3 @@ def style_sma200_row(row):
         if price > sma:
             styles[idx] = "color: #00e676; font-weight: bold;"
         elif price < sma:
-            styles[idx] = "color: #ff5252; font-weight: bold;"
-    return styles
-
-styler = display_df.style.apply(style_sma200_row, axis=1)
-styler = styler.map(color_pnl_cols, subset=["Profit / Pierdere", "Randament %"])
-styler = styler.map(color_rsi_col, subset=["RSI (14)"])
-styler = styler.format({
