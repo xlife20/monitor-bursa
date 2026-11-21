@@ -1,43 +1,43 @@
-Ticker,Company,Sector,Shares,Buy Price,Current Price,Currency
-LYB,LyondellBasell,Materials,5.5,51.39,55.82,USD
-ARE,Alexandria Real Estate,Real Estate,7.0,58.89,40.05,USD
-DGE.L,Diageo,Consumer Staples,9.0,16.558,18.815,GBP
-GLAD,Gladstone Capital,Financials,12.0,18.11,16.96,USD
-NVO,Novo Nordisk,Healthcare,5.0,43.41,37.84,USD
-INTC,Intel,Technology,3.0,19.81,51.33,USD
-RHM.DE,Rheinmetall,Industrials,0.2,923.84,678.0,EUR
-CMCSA,Comcast,Communication Services,6.0,24.77,24.89,USD
-KHC,Kraft Heinz,Consumer Staples,5.0,23.652,25.39,USD
-BATS.L,British American Tobacco,Consumer Staples,2.0,30.5,44.13,GBP
-VETH.DE,VanEck Ethereum ETN,Crypto / ETN,9.0,10.6444,8.7125,EUR
-ZTS,Zoetis,Healthcare,1.0,85.07,78.78,USD
-VICI,VICI Properties,Real Estate,3.0,29.07,24.21,USD
-UGI,UGI Corporation,Utilities,2.0,31.89,35.56,USD
-MCD,McDonald's,Consumer Discretionary,0.25,278.0,273.35,USD
-SPYD.DE,SPDR S&P US Dividend Aristocrats,ETF,0.75,68.013,79.14,EUR
-VBTC.DE,VanEck Bitcoin ETN,Crypto / ETN,2.0,30.584,27.658,EUR
-ISLN.L,iShares Physical Silver ETC,Commodities,1.869,50.023,39.41,USD
-O,Realty Income,Real Estate,1.0,57.2,58.01,USD
-PFE,Pfizer,Healthcare,2.0,23.63,27.42,USD
-ABF.L,Associated British Foods,Consumer Staples,2.0,18.833,20.17,GBP
-VZ,Verizon,Communication Services,1.0,40.45,46.51,USD
-NKE,Nike,Consumer Discretionary,1.4001,48.65,32.94,USD
-PEP,PepsiCo,Consumer Staples,0.3,134.83,140.52,USD
-VT0P.DE,VanEck Crypto Leaders ETN,Crypto / ETN,7.0,6.2882,5.4025,EUR
-TGT,Target,Consumer Discretionary,0.25,87.12,165.97,USD
-EGLN.L,iShares Physical Gold ETC,Commodities,0.5,63.19,62.56,USD
-BMY,Bristol-Myers Squibb,Healthcare,0.5,43.76,58.82,USD
-CCCC,C4 Therapeutics,Healthcare,11.0,2.21,2.48,USD
-OXY,Occidental Petroleum,Energy,0.5,40.03,53.91,USD
-F,Ford Motor,Consumer Discretionary,2.0,9.15,11.17,USD
-SAB.MC,Banco Sabadell,Financials,4.0,2.97,3.497,EUR
-SOFI,SoFi Technologies,Financials,1.0,18.67,12.47,USD
-MPW,Medical Properties Trust,Real Estate,3.0,4.74,1.76,USD
-TISG.MI,The Italian Sea Group,Industrials,6.0,1.75,0.602,EUR
-ICU,SeaStar Medical,Healthcare,2.0,5.68,0.86,USD
-YYAI,AiRWA,Technology,0.0375,1198.8213,0.6565,USD
-SXR8.DE,iShares Core S&P 500 ETF,ETF,0.0395,601.51,681.2,EUR
-SXRV.DE,iShares NASDAQ 100 ETF,ETF,0.0187,1138.39,1314.0,EUR
-SGLD.L,Invesco Physical Gold ETC,Commodities,0.0731,366.9931,340.66,USD
-COPX.L,Global X Copper Miners ETF,ETF,0.3536,55.477,45.11,USD
-URNU.DE,Global X Uranium ETF,ETF,0.9023,19.192,14.068,EUR
+Ticker,Company,Sector,Shares,Buy Price,Current Price,Currency,Dividends EUR
+LYB,LyondellBasell,Materials,5.5,51.39,55.82,USD,22.14
+ARE,Alexandria Real Estate,Real Estate,7.0,58.89,40.05,USD,15.90
+DGE.L,Diageo,Consumer Staples,9.0,16.558,18.815,GBP,3.19
+GLAD,Gladstone Capital,Financials,12.0,18.11,16.96,USD,1.46
+NVO,Novo Nordisk,Healthcare,5.0,43.41,37.84,USD,6.17
+INTC,Intel,Technology,3.0,19.81,51.33,USD,0.00
+RHM.DE,Rheinmetall,Industrials,0.2,923.84,678.0,EUR,0.35
+CMCSA,Comcast,Communication Services,6.0,24.77,24.89,USD,4.17
+KHC,Kraft Heinz,Consumer Staples,5.0,23.652,25.39,USD,4.58
+BATS.L,British American Tobacco,Consumer Staples,2.0,30.5,44.13,GBP,9.83
+VETH.DE,VanEck Ethereum ETN,Crypto / ETN,9.0,10.6444,8.7125,EUR,0.00
+ZTS,Zoetis,Healthcare,1.0,85.07,78.78,USD,0.38
+VICI,VICI Properties,Real Estate,3.0,29.07,24.21,USD,3.98
+UGI,UGI Corporation,Utilities,2.0,31.89,35.56,USD,3.32
+MCD,McDonald's,Consumer Discretionary,0.25,278.0,273.35,USD,0.68
+SPYD.DE,SPDR S&P US Dividend Aristocrats,ETF,0.75,68.013,79.14,EUR,1.59
+VBTC.DE,VanEck Bitcoin ETN,Crypto / ETN,2.0,30.584,27.658,EUR,0.00
+ISLN.L,iShares Physical Silver ETC,Commodities,1.869,50.023,39.41,USD,0.00
+O,Realty Income,Real Estate,1.0,57.2,58.01,USD,2.94
+PFE,Pfizer,Healthcare,2.0,23.63,27.42,USD,3.17
+ABF.L,Associated British Foods,Consumer Staples,2.0,18.833,20.17,GBP,1.92
+VZ,Verizon,Communication Services,1.0,40.45,46.51,USD,2.06
+NKE,Nike,Consumer Discretionary,1.4001,48.65,32.94,USD,1.39
+PEP,PepsiCo,Consumer Staples,0.3,134.83,140.52,USD,1.77
+VT0P.DE,VanEck Crypto Leaders ETN,Crypto / ETN,7.0,6.2882,5.4025,EUR,0.00
+TGT,Target,Consumer Discretionary,0.25,87.12,165.97,USD,0.78
+EGLN.L,iShares Physical Gold ETC,Commodities,0.5,63.19,62.56,USD,0.00
+BMY,Bristol-Myers Squibb,Healthcare,0.5,43.76,58.82,USD,1.11
+CCCC,C4 Therapeutics,Healthcare,11.0,2.21,2.48,USD,0.00
+OXY,Occidental Petroleum,Energy,0.5,40.03,53.91,USD,0.50
+F,Ford Motor,Consumer Discretionary,2.0,9.15,11.17,USD,1.41
+SAB.MC,Banco Sabadell,Financials,4.0,2.97,3.497,EUR,1.62
+SOFI,SoFi Technologies,Financials,1.0,18.67,12.47,USD,0.00
+MPW,Medical Properties Trust,Real Estate,3.0,4.74,1.76,USD,1.10
+TISG.MI,The Italian Sea Group,Industrials,6.0,1.75,0.602,EUR,0.00
+ICU,SeaStar Medical,Healthcare,2.0,5.68,0.86,USD,0.00
+YYAI,AiRWA,Technology,0.0375,1198.8213,0.6565,USD,0.00
+SXR8.DE,iShares Core S&P 500 ETF,ETF,0.0395,601.51,681.2,EUR,0.00
+SXRV.DE,iShares NASDAQ 100 ETF,ETF,0.0187,1138.39,1314.0,EUR,0.00
+SGLD.L,Invesco Physical Gold ETC,Commodities,0.0731,366.9931,340.66,USD,0.00
+COPX.L,Global X Copper Miners ETF,ETF,0.3536,55.477,45.11,USD,0.00
+URNU.DE,Global X Uranium ETF,ETF,0.9023,19.192,14.068,EUR,0.00
