@@ -4,14 +4,14 @@ import numpy as np
 import csv
 import io
 from pathlib import Path
-from utils import load_csv, save_csv_permanent, get_meta, fetch_data, fetch_annual_dividends, c_pnl, c_rsi, f_price, f_shares, f_num2, f_rsi, f_sma, f_pct, clean_table, quick_del
+from utils import save_csv_permanent, get_meta, fetch_data, fetch_annual_dividends, c_pnl, c_rsi, f_price, f_shares, f_num2, f_rsi, f_sma, f_pct, clean_table, quick_del
 
 st.set_page_config(page_title="Portofoliu XTB", layout="wide")
 CSV_PATH = Path(__file__).resolve().parent.parent / "portfolio.csv"
 CLOSED_DIVS_EUR = 18.24
 
 def clean_xtb_ticker(raw_tk):
-    return raw_tk.replace(".US", "").replace(".UK", ".L").replace(".ES", ".MC").replace(".IT", ".MI")
+    return str(raw_tk).replace(".US", "").replace(".UK", ".L").replace(".ES", ".MC").replace(".IT", ".MI").strip()
 
 def parse_xtb_report(uploaded_file, old_df):
     raw = uploaded_file.getvalue().decode("utf-8", errors="ignore")
@@ -23,11 +23,11 @@ def parse_xtb_report(uploaded_file, old_df):
     for row in reader:
         if not row:
             continue
-        first = row.strip()
-        if first == "Type" and len(row) >= 6 and row.strip() == "Amount":
+        first = str(row).strip()
+        if first == "Type" and len(row) >= 6 and str(row).strip() == "Amount":
             mode = "cash"
             continue
-        if first == "Product" and len(row) >= 9 and row.strip() == "Open price":
+        if first == "Product" and len(row) >= 9 and str(row).strip() == "Open price":
             mode = "open"
             continue
         if first in ("Total", "Account number", "Note"):
@@ -35,7 +35,7 @@ def parse_xtb_report(uploaded_file, old_df):
             continue
 
         if mode == "cash" and len(row) >= 6:
-            op_type, raw_tk, amt_str = row.strip(), row.strip(), row.strip()
+            op_type, raw_tk, amt_str = str(row).strip(), str(row).strip(), str(row).strip()
             if op_type in ("Dividend", "Withholding tax") and raw_tk:
                 tk = clean_xtb_ticker(raw_tk)
                 try:
@@ -44,7 +44,7 @@ def parse_xtb_report(uploaded_file, old_df):
                     pass
 
         elif mode == "open" and len(row) >= 9:
-            prod, raw_tk, cat, vol_str, open_p_str = row.strip(), row.strip(), row.strip(), row.strip(), row.strip()
+            prod, raw_tk, cat, vol_str, open_p_str = str(row).strip(), str(row).strip(), str(row).strip(), str(row).strip(), str(row).strip()
             if prod in ("My Trades", "Investment Plan") and raw_tk and cat != "":
                 tk = clean_xtb_ticker(raw_tk)
                 if "CVR" in tk or "US931" in tk:
@@ -55,12 +55,14 @@ def parse_xtb_report(uploaded_file, old_df):
                 except ValueError:
                     continue
 
-                match = old_df[old_df["Ticker"] == tk]
-                if not match.empty:
-                    comp = str(match["Company"].values)
-                    sec = str(match["Sector"].values)
-                    curr = str(match["Currency"].values)
-                else:
+                comp, sec, curr = "", "", ""
+                if not old_df.empty and "Ticker" in old_df.columns:
+                    match = old_df[old_df["Ticker"].astype(str) == tk]
+                    if not match.empty:
+                        comp = str(match["Company"].iloc)
+                        sec = str(match["Sector"].iloc)
+                        curr = str(match["Currency"].iloc)
+                if not comp:
                     comp, sec, curr = get_meta(tk)
                     if raw_tk.endswith(".UK"):
                         curr = "USD" if any(x in tk for x in ["ISLN", "EGLN", "SGLD", "COPX"]) else "GBP"
@@ -85,14 +87,14 @@ def parse_xtb_report(uploaded_file, old_df):
         tot_sh = grp["Shares"].sum()
         avg_b = (grp["Shares"] * grp["Buy Price"]).sum() / tot_sh if tot_sh > 0 else 0.0
         grouped.append({
-            "Ticker": tk,
-            "Company": grp["Company"].values,
-            "Sector": grp["Sector"].values,
-            "Shares": round(tot_sh, 6),
-            "Buy Price": round(avg_b, 4),
-            "Current Price": round(avg_b, 4),
-            "Currency": grp["Currency"].values,
-            "Dividends EUR": grp["Dividends EUR"].values
+            "Ticker": str(tk),
+            "Company": str(grp["Company"].iloc),
+            "Sector": str(grp["Sector"].iloc),
+            "Shares": round(float(tot_sh), 6),
+            "Buy Price": round(float(avg_b), 4),
+            "Current Price": round(float(avg_b), 4),
+            "Currency": str(grp["Currency"].iloc),
+            "Dividends EUR": float(grp["Dividends EUR"].iloc)
         })
     return pd.DataFrame(grouped)
 
@@ -110,9 +112,13 @@ if st.sidebar.button("🔄 Actualizează prețurile live"):
     st.rerun()
 
 req = ["Ticker", "Company", "Sector", "Shares", "Buy Price", "Current Price", "Currency", "Dividends EUR"]
-df = load_csv(CSV_PATH, req).copy()
-if "Dividends EUR" not in df.columns:
-    df["Dividends EUR"] = 0.0
+if CSV_PATH.exists():
+    df = pd.read_csv(CSV_PATH).fillna("")
+    for col in req:
+        if col not in df.columns:
+            df[col] = 0.0 if col in ["Shares", "Buy Price", "Current Price", "Dividends EUR"] else ""
+else:
+    df = pd.DataFrame(columns=req)
 
 if st.session_state.show_imp_xtb:
     with st.container(border=True):
@@ -130,8 +136,10 @@ if st.session_state.show_imp_xtb:
 
 st.title("📈 Portofoliu XTB")
 
-tickers = [x for x in df["Ticker"].dropna().unique().tolist() if str(x).strip() != ""]
-all_curr = sorted([x for x in df["Currency"].dropna().unique().tolist() if str(x).strip() != ""]) or ["EUR", "USD"]
+df = df[df["Ticker"].astype(str).str.strip() != ""].copy()
+tickers = df["Ticker"].astype(str).unique().tolist()
+all_curr = sorted([x for x in df["Currency"].astype(str).unique().tolist() if x.strip() != ""]) or ["EUR", "USD"]
+
 prices, _, rsi_m, sma_m, fx = fetch_data(tickers, list(set(all_curr + ["EUR", "USD", "GBP"])))
 ann_div_per_share = fetch_annual_dividends(tickers)
 
@@ -202,4 +210,3 @@ def f_yoc(v):
 if not view.empty:
     cols = ["Ticker", "Company", "Sector", "Shares", "Buy Price", "RSI", "SMA_Pct", "Current Price", "Currency", "Inv", "Mkt", "Div", "Ann_Div", "Div_Yield", "YoC", "PnL", "Ret", "Wgt"]
     disp = view[cols].copy()
-    disp.columns = ["Tiker", "Companie", "Sector", "Acțiuni", "Preț mediu", "RSI (14)", "vs SMA 200 %", "Preț curent", "Monedă", "Valoare investită", "Valoare piață", "Dividende", "Dividende / an (Est.)", "Dividend %", "YoC %", "Profit / Pierdere", "Randament %", "Pondere %"]
