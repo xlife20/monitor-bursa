@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from utils import load_csv, fetch_data, c_pnl, c_rsi, f_price, f_shares, f_num2, f_rsi, f_sma, f_pct, quick_del
+from utils import load_csv, fetch_data, c_pnl, c_rsi, f_price, f_shares, f_num2, f_rsi, f_sma, f_pct, clean_table, quick_del
 
 st.set_page_config(page_title="Portofoliu Kraken", layout="wide")
 CSV_PATH = Path(__file__).resolve().parent.parent / "portfolio_kraken.csv"
@@ -17,8 +17,8 @@ st.title("🪙 Portofoliu Kraken")
 req = ["Ticker", "Company", "Sector", "Shares", "Buy Price", "Current Price", "Currency", "Dividends EUR"]
 df = load_csv(CSV_PATH, req).copy()
 
-tickers = df["Ticker"].dropna().unique().tolist()
-all_curr = sorted(df["Currency"].dropna().unique().tolist()) or ["EUR", "USD"]
+tickers = [x for x in df["Ticker"].dropna().unique().tolist() if str(x).strip() != ""]
+all_curr = sorted([x for x in df["Currency"].dropna().unique().tolist() if str(x).strip() != ""]) or ["EUR", "USD"]
 prices, _, rsi_m, sma_m, fx = fetch_data(tickers, list(set(all_curr + ["EUR", "USD", "GBP"])))
 
 for c in ["Shares", "Buy Price", "Current Price"]:
@@ -63,7 +63,8 @@ if not view.empty:
     disp = view[cols].copy()
     disp.columns = ["Tiker", "Companie", "Sector", "Acțiuni", "Preț mediu", "RSI (14)", "vs SMA 200 %", "Preț curent", "Monedă", "Valoare investită", "Valoare piață", "Profit / Pierdere", "Randament %", "Pondere %"]
     fmt = dict([("Acțiuni", f_shares), ("Preț mediu", f_price), ("RSI (14)", f_rsi), ("vs SMA 200 %", f_sma), ("Preț curent", f_price), ("Valoare investită", f_num2), ("Valoare piață", f_num2), ("Profit / Pierdere", f_num2), ("Randament %", f_pct), ("Pondere %", f_pct)])
-    styler = disp.style.map(c_pnl, subset=["Profit / Pierdere", "Randament %", "vs SMA 200 %"]).map(c_rsi, subset=["RSI (14)"]).format(fmt)
+    disp_clean = clean_table(disp, fmt)
+    styler = disp_clean.style.map(c_pnl, subset=["Profit / Pierdere", "Randament %", "vs SMA 200 %"]).map(c_rsi, subset=["RSI (14)"])
     st.dataframe(styler, use_container_width=True, hide_index=True, height=400, column_config=dict(Tiker=st.column_config.TextColumn("Tiker", pinned=True)))
     quick_del(df, req, CSV_PATH, "kraken")
     l1, r1 = st.columns(2)
