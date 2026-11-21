@@ -29,6 +29,7 @@ st.markdown("""
 
 XTB_CSV = Path(__file__).with_name("portfolio.csv")
 KRAKEN_CSV = Path(__file__).with_name("portfolio_kraken.csv")
+DIVS_ANNUAL_CSV = Path(__file__).with_name("dividends_annual.csv")
 CLOSED_DIVS_EUR = 18.24
 
 req = ["Ticker", "Company", "Sector", "Shares", "Buy Price", "Current Price", "Currency", "Dividends EUR"]
@@ -104,3 +105,26 @@ if c2.button("🪙 Portofoliu Kraken", use_container_width=True, type="primary")
     st.switch_page("pages/2_Portofoliu_Kraken.py")
 if c3.button("👁️ Urmărește", use_container_width=True, type="primary"):
     st.switch_page("pages/3_Urmareste.py")
+
+st.markdown("<br><br><h4 style='text-align: center; color: #fafafa;'>💰 Dividende Nete Încasate Anual (EUR)</h4>", unsafe_allow_html=True)
+
+if not DIVS_ANNUAL_CSV.exists():
+    init_divs = pd.DataFrame([
+        {"An": "2025", "Dividende EUR": 31.61},
+        {"An": "2026", "Dividende EUR": 84.14}
+    ])
+    init_divs.to_csv(DIVS_ANNUAL_CSV, index=False)
+
+df_divs = pd.read_csv(DIVS_ANNUAL_CSV)
+df_divs["An"] = df_divs["An"].astype(str)
+df_divs["Dividende EUR"] = pd.to_numeric(df_divs["Dividende EUR"], errors="coerce").fillna(0.0)
+
+_, chart_col, _ = st.columns([0.6, 4.2, 0.6])
+with chart_col:
+    st.bar_chart(df_divs.set_index("An")["Dividende EUR"], color="#ffd54f", height=260)
+    with st.expander("✏️ Editează sumele exacte pe fiecare an"):
+        ed_divs = st.data_editor(df_divs, num_rows="dynamic", use_container_width=True, key="ed_annual_divs")
+        if st.button("Salvează dividendele anuale"):
+            ed_divs.to_csv(DIVS_ANNUAL_CSV, index=False)
+            st.cache_data.clear()
+            st.rerun()
