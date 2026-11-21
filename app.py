@@ -84,17 +84,17 @@ def compute_sma200(series, scale=1.0):
 
 @st.cache_data(ttl=300)
 def fetch_live_market_data(tickers, currencies):
-    prices = {}
-    rsi_map = {}
-    sma200_map = {}
-    fx_rates = {"USD": 1.0}
-    uk_pence_tickers = {"DGE.L", "BATS.L", "ABF.L"}
+    prices = dict()
+    rsi_map = dict()
+    sma200_map = dict()
+    fx_rates = dict(USD=1.0)
+    uk_pence_tickers = ["DGE.L", "BATS.L", "ABF.L"]
 
     if tickers:
         try:
             data = yf.download(tickers, period="1y", progress=False)["Close"]
             if isinstance(data, pd.Series):
-                t = tickers if isinstance(tickers, list) else tickers
+                t = tickers[0] if isinstance(tickers, list) else tickers
                 s = data.dropna()
                 if not s.empty:
                     scale = 0.01 if t in uk_pence_tickers else 1.0
@@ -114,19 +114,19 @@ def fetch_live_market_data(tickers, currencies):
             pass
 
     other_curr = [c for c in currencies if c != "USD"]
-    fx_tickers = [f"{c}USD=X" for c in other_curr]
-    fallback_to_usd = {"EUR": 1.08, "GBP": 1.27, "RON": 0.22}
+    fx_tickers = [c + "USD=X" for c in other_curr]
+    fallback_to_usd = dict(EUR=1.08, GBP=1.27, RON=0.22)
 
     if fx_tickers:
         try:
             fx_data = yf.download(fx_tickers, period="5d", progress=False)["Close"]
             if isinstance(fx_data, pd.Series):
-                c = other_curr
+                c = other_curr[0]
                 if not fx_data.dropna().empty:
                     fx_rates[c] = float(fx_data.dropna().iloc[-1])
             else:
                 for c in other_curr:
-                    ft = f"{c}USD=X"
+                    ft = c + "USD=X"
                     if ft in fx_data.columns and not fx_data[ft].dropna().empty:
                         fx_rates[c] = float(fx_data[ft].dropna().iloc[-1])
         except Exception:
@@ -145,7 +145,7 @@ if "Dividends EUR" not in df.columns:
 required = ["Ticker", "Company", "Sector", "Shares", "Buy Price", "Current Price", "Currency", "Dividends EUR"]
 for col in ["Ticker", "Company", "Sector", "Shares", "Buy Price", "Current Price", "Currency"]:
     if col not in df.columns:
-        st.error(f"Lipsește coloana: {col}")
+        st.error("Lipsește coloana: " + col)
         st.stop()
 
 if st.sidebar.button("🔄 Actualizează prețurile live"):
@@ -251,17 +251,15 @@ st.subheader(f"Portofoliu (Valori convertite în {target_currency})")
 display_df = view[[
     "Ticker", "Company", "Sector", "Shares", "Buy Price", "RSI", "SMA200_Pct", "Current Price", "Currency",
     "Invested Value", "Market Value", "Dividends", "Total P/L", "Total Return %", "Weight %"
-]].rename(columns={
-    "Ticker": "Simbol",
-    "Company": "Companie",
-    "Sector": "Sector",
-    "Shares": "Acțiuni",
-    "Buy Price": "Preț mediu",
-    "RSI": "RSI (14)",
-    "SMA200_Pct": "vs SMA 200 %",
-    "Current Price": "Preț curent",
-    "Currency": "Monedă",
-    "Invested Value": "Valoare investită",
-    "Market Value": "Valoare piață",
-    "Dividends": "Dividende",
-    "Total P/L": "Profit / Pierdere",
+]].copy()
+
+display_df.columns = [
+    "Simbol", "Companie", "Sector", "Acțiuni", "Preț mediu", "RSI (14)", "vs SMA 200 %",
+    "Preț curent", "Monedă", "Valoare investită", "Valoare piață", "Dividende",
+    "Profit / Pierdere", "Randament %", "Pondere %"
+]
+
+def render_html_table(df_in):
+    headers = "".join(["<th>" + str(col) + "</th>" for col in df_in.columns])
+    rows_html = []
+    for _, r in df_in.iterrows():
