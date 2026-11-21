@@ -8,7 +8,7 @@ st.set_page_config(page_title="Portofoliu Kraken", layout="wide")
 CSV_PATH = Path(__file__).resolve().parent.parent / "portfolio_kraken.csv"
 
 def norm_a(a):
-    s = str(a).strip().upper().split(".")
+    s = str(a).strip().upper().partition(".")[0]
     if s.endswith(("21", "28")) and len(s) > 4: s = s[:-2]
     m = {"XXBT": "BTC", "XBT": "BTC", "XETH": "ETH", "XXRP": "XRP", "XLTC": "LTC", "XXLM": "XLM", "XDOGE": "DOGE", "ZEUR": "EUR", "ZUSD": "USD", "ZGBP": "GBP"}
     return m.get(s, s)
