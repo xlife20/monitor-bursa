@@ -18,8 +18,11 @@ st.markdown("""
     div[data-testid="stMetric"] {
         background-color: #161b22;
         border: 1px solid #30363d;
-        padding: 15px;
+        padding: 12px;
         border-radius: 8px;
+    }
+    div[data-testid="stMetricValue"] {
+        font-size: 1.55rem !important;
     }
     h1, h2, h3, p, label, .stMarkdown {
         color: #fafafa !important;
@@ -257,17 +260,13 @@ def color_rsi_col(val):
         return "color: #ff5252; font-weight: bold;"
     return "color: #fafafa;"
 
-fmt_dict = {
-    "Acțiuni": "{:,.4g}",
-    "Preț mediu": "{:,.2f}",
-    "RSI (14)": "{:.1f}",
-    "SMA 200": "{:,.2f}",
-    "Preț curent": "{:,.2f}",
-    "Valoare investită": "{:,.2f}",
-    "Valoare piață": "{:,.2f}",
-    "Dividende": "{:,.2f}",
-    "Profit / Pierdere": "{:,.2f}",
-    "Randament %": "{:.2f}%",
-    "Pondere %": "{:.2f}%"
-}
-
+def style_sma200_row(row):
+    styles = [""] * len(row)
+    sma = row["SMA 200"]
+    price = row["Preț curent"]
+    if pd.notna(sma) and pd.notna(price):
+        idx = row.index.get_loc("SMA 200")
+        if price > sma:
+            styles[idx] = "color: #00e676; font-weight: bold;"
+        elif price < sma:
+            styles[idx] = "color: #ff5252; font-weight: bold;"
