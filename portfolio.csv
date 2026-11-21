@@ -1,0 +1,4 @@
+Ticker,Company,Sector,Shares,Buy Price,Current Price,Currency,Invested Value,Market Value,Profit/Loss,Return %
+ZTS,Zoetis,Healthcare,10,170.0,160.0,USD,1700.0,1600.0,-100.0,-5.88235294117647
+AAPL,Apple,Technology,5,190.0,225.0,USD,950.0,1125.0,175.0,18.421052631578945
+MSFT,Microsoft,Technology,3,400.0,490.0,USD,1200.0,1470.0,270.0,22.5
