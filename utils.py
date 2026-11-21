@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import yfinance as yf
+import urllib.request
+import json
+import base64
 
 @st.cache_data
 def load_csv(csv_path, cols):
@@ -9,6 +12,39 @@ def load_csv(csv_path, cols):
         return pd.DataFrame(columns=cols)
     df = pd.read_csv(csv_path)
     return df.fillna("")
+
+def save_csv_permanent(df, csv_path):
+    df.to_csv(csv_path, index=False)
+    try:
+        token = st.secrets.get("GITHUB_TOKEN", "")
+        repo = st.secrets.get("GITHUB_REPO", "xlife20/monitor-bursa")
+        if not token:
+            return False
+        filename = csv_path.name
+        url = f"https://github.com{repo}/contents/{filename}"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "StreamlitApp"
+        }
+        sha = None
+        try:
+            req_get = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req_get, timeout=5) as resp:
+                sha = json.loads(resp.read().decode()).get("sha")
+        except Exception:
+            pass
+
+        content_b64 = base64.b64encode(df.to_csv(index=False).encode("utf-8")).decode("utf-8")
+        payload = {"message": f"Update {filename} from app", "content": content_b64}
+        if sha:
+            payload["sha"] = sha
+
+        req_put = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="PUT")
+        with urllib.request.urlopen(req_put, timeout=8) as resp:
+            return resp.status in (200, 201)
+    except Exception:
+        return False
 
 def get_meta(symbol):
     comp, sec, curr = symbol, "Acțiuni", "USD"
@@ -92,7 +128,7 @@ def c_pnl(v):
     try:
         num = float(str(v).replace(",", "").replace("%", "").replace("+", ""))
         return "color: #00e676; font-weight: bold;" if num > 0 else ("color: #ff5252; font-weight: bold;" if num < 0 else "")
-    except:
+    except Exception:
         return ""
 
 def c_rsi(v):
@@ -100,7 +136,7 @@ def c_rsi(v):
     try:
         num = float(str(v).replace("%", ""))
         return "color: #00e676; font-weight: bold;" if num <= 30 else ("color: #ff5252; font-weight: bold;" if num >= 70 else "")
-    except:
+    except Exception:
         return ""
 
 def f_price(v):
@@ -129,6 +165,6 @@ def quick_del(df_orig, cols, csv_path, kp):
         opts = [x for x in df_orig["Ticker"].dropna().unique().tolist() if str(x).strip() != ""]
         to_del = st.multiselect("Selectează tikerele de șters:", opts, key=f"ds_{kp}")
         if st.button("Șterge selectate", key=f"db_{kp}") and to_del:
-            df_orig[~df_orig["Ticker"].isin(to_del)][cols].to_csv(csv_path, index=False)
+            save_csv_permanent(df_orig[~df_orig["Ticker"].isin(to_del)][cols], csv_path)
             st.cache_data.clear()
             st.rerun()
