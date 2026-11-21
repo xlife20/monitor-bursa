@@ -6,7 +6,6 @@ from pathlib import Path
 
 st.set_page_config(page_title="Panou Portofoliu", layout="wide")
 
-# Stil CSS pentru fundal negru (Dark Mode) fortat
 st.markdown("""
 <style>
     .stApp {
@@ -32,8 +31,6 @@ st.title("📊 Panou de Control Portofoliu")
 st.caption("Prețuri, indicatori tehnici (RSI 14, SMA 200), cursuri valutare live și dividende nete încasate din XTB.")
 
 CSV_PATH = Path(__file__).with_name("portfolio.csv")
-
-# Dividende nete încasate din poziții închise anterior (KVUE, WEN, UPS, MRK, NVDA, UNH, VSNT) în EUR
 CLOSED_POSITIONS_DIVIDENDS_EUR = 18.24
 
 @st.cache_data
@@ -65,15 +62,13 @@ def fetch_live_market_data(tickers, currencies):
     rsi_map = {}
     sma200_map = {}
     fx_rates = {"USD": 1.0}
-
     uk_pence_tickers = {"DGE.L", "BATS.L", "ABF.L"}
 
-    # 1. Prețuri acțiuni și istoric pe 1 an pentru RSI (14) și SMA 200
     if tickers:
         try:
             data = yf.download(tickers, period="1y", progress=False)["Close"]
             if isinstance(data, pd.Series):
-                t = tickers[0] if isinstance(tickers, list) else tickers
+                t = tickers if isinstance(tickers, list) else tickers
                 s = data.dropna()
                 if not s.empty:
                     scale = 0.01 if t in uk_pence_tickers else 1.0
@@ -92,7 +87,6 @@ def fetch_live_market_data(tickers, currencies):
         except Exception:
             pass
 
-    # 2. Cursuri valutare live față de USD
     other_curr = [c for c in currencies if c != "USD"]
     fx_tickers = [f"{c}USD=X" for c in other_curr]
     fallback_to_usd = {"EUR": 1.08, "GBP": 1.27, "RON": 0.22}
@@ -101,7 +95,7 @@ def fetch_live_market_data(tickers, currencies):
         try:
             fx_data = yf.download(fx_tickers, period="5d", progress=False)["Close"]
             if isinstance(fx_data, pd.Series):
-                c = other_curr[0]
+                c = other_curr
                 if not fx_data.dropna().empty:
                     fx_rates[c] = float(fx_data.dropna().iloc[-1])
             else:
@@ -143,13 +137,11 @@ df["Buy Price"] = pd.to_numeric(df["Buy Price"], errors="coerce").fillna(0)
 df["Current Price"] = pd.to_numeric(df["Current Price"], errors="coerce").fillna(0)
 df["Dividends EUR"] = pd.to_numeric(df["Dividends EUR"], errors="coerce").fillna(0)
 
-# Actualizare prețuri live și indicatori tehnici
 df["Live Price"] = df["Ticker"].map(live_prices)
 df["Current Price"] = np.where(df["Live Price"].notna(), df["Live Price"], df["Current Price"])
 df["RSI"] = df["Ticker"].map(rsi_map)
 df["SMA200"] = df["Ticker"].map(sma200_map)
 
-# Filtre și sortare în bara laterală
 st.sidebar.header("Setări afișare")
 target_currency = st.sidebar.selectbox("Monedă raportare (Total)", ["EUR", "USD", "GBP"])
 filter_options = ["Toate (Consolidat)"] + all_currencies
@@ -166,7 +158,6 @@ sort_by = st.sidebar.selectbox(
     ]
 )
 
-# Conversie în moneda aleasă
 df["Rate_to_USD"] = df["Currency"].map(fx_to_usd).fillna(1.0)
 target_rate_to_usd = fx_to_usd.get(target_currency, 1.0)
 eur_to_target = fx_to_usd.get("EUR", 1.08) / target_rate_to_usd
@@ -211,7 +202,6 @@ st.sidebar.info(
     f"- 1 GBP = {gbp_eur:.4f} EUR"
 )
 
-# Metrici generale
 invested = view["Invested Value"].sum()
 market = view["Market Value"].sum()
 open_divs = view["Dividends"].sum()
@@ -267,6 +257,17 @@ def color_rsi_col(val):
         return "color: #ff5252; font-weight: bold;"
     return "color: #fafafa;"
 
-styled_df = (
-    display_df
-    .style
+fmt_dict = {
+    "Acțiuni": "{:,.4g}",
+    "Preț mediu": "{:,.2f}",
+    "RSI (14)": "{:.1f}",
+    "SMA 200": "{:,.2f}",
+    "Preț curent": "{:,.2f}",
+    "Valoare investită": "{:,.2f}",
+    "Valoare piață": "{:,.2f}",
+    "Dividende": "{:,.2f}",
+    "Profit / Pierdere": "{:,.2f}",
+    "Randament %": "{:.2f}%",
+    "Pondere %": "{:.2f}%"
+}
+
