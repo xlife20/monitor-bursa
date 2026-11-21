@@ -124,20 +124,13 @@ if st.sidebar.button("🔄 Actualizează prețurile live"):
     st.cache_data.clear()
     st.rerun()
 
-# ==========================================
-# PAGINA 3: URMARESTE (WATCHLIST)
-# ==========================================
 if st.session_state.view_mode == "watch":
     st.title("👁️ Listă de Urmărire (Watchlist)")
     w_cols = ["Ticker", "Company", "Sector", "Target Price", "Currency"]
     df = load_data(WATCH_CSV, w_cols).copy()
 
     with st.expander("➕ Adaugă rapid mai multe tikere odată", expanded=True):
-        raw_tickers = st.text_area(
-            "Introdu simbolurile Yahoo Finance separate prin virgulă, spațiu sau pe rânduri noi:",
-            placeholder="Ex: TSLA, KO, O, NVDA, BTC-EUR, RHM.DE, BATS.L",
-            height=80
-        )
+        raw_tickers = st.text_area("Introdu simbolurile Yahoo Finance separate prin virgulă, spațiu sau pe rânduri noi:", placeholder="Ex: TSLA, KO, O, NVDA, BTC-EUR, RHM.DE, BATS.L", height=80)
         if st.button("Adaugă în listă", type="primary"):
             new_list = [t.strip().upper() for t in raw_tickers.replace(",", " ").replace("\n", " ").split(" ") if t.strip()]
             existing = set(df["Ticker"].astype(str).str.upper().tolist())
@@ -152,8 +145,6 @@ if st.session_state.view_mode == "watch":
                             comp = info.get("shortName") or info.get("longName") or t
                             sec = info.get("sector") or ("Crypto" if "-USD" in t or "-EUR" in t else "Watchlist")
                             curr = (info.get("currency") or "USD").upper()
-                            if curr == "GBP" and t.endswith(".L"):
-                                curr = "GBP"
                         except Exception:
                             pass
                         new_rows.append(dict(Ticker=t, Company=comp, Sector=sec, Target_Price=0.0, Currency=curr))
@@ -175,7 +166,7 @@ if st.session_state.view_mode == "watch":
     df["Diff_Target"] = np.where((df["Target Price"] > 0) & df["Current"].notna(), (df["Current"] - df["Target Price"]) / df["Target Price"] * 100, np.nan).astype(float)
     df["RSI"] = pd.to_numeric(df["Ticker"].map(rsi_m), errors="coerce").astype(float)
     df["SMA200"] = pd.to_numeric(df["Ticker"].map(sma_m), errors="coerce").astype(float)
-    df["SMA_Pct"] = np.where(df["SMA200"].notna() & (df["SMA200"] != 0), (df["Current Price" if "Current Price" in df.columns else "Current"] - df["SMA200"]) / df["SMA200"] * 100, np.nan).astype(float)
+    df["SMA_Pct"] = np.where(df["SMA200"].notna() & (df["SMA200"] != 0), (df["Current"] - df["SMA200"]) / df["SMA200"] * 100, np.nan).astype(float)
     st.sidebar.info(f"Fișier: `{WATCH_CSV.name}`\n\nSimboluri urmărite: {len(df)}")
     if df.empty:
         st.info("Lista de urmărire este goală. Folosește caseta de mai sus pentru a adăuga mai multe tikere.")
@@ -193,9 +184,6 @@ if st.session_state.view_mode == "watch":
         st.success(f"Salvat în {WATCH_CSV.name}! Reîncarcă pagina.")
     st.stop()
 
-# ==========================================
-# PAGINA 1 & 2: PORTOFOLIU XTB / KRAKEN
-# ==========================================
 is_kraken = (st.session_state.view_mode == "kraken")
 st.title("🪙 Portofoliu Kraken" if is_kraken else "📈 Portofoliu XTB")
 csv_path = KRAKEN_CSV if is_kraken else XTB_CSV
@@ -207,4 +195,9 @@ tickers = df["Ticker"].dropna().unique().tolist()
 all_curr = sorted(df["Currency"].dropna().unique().tolist()) or ["EUR", "USD"]
 prices, _, rsi_m, sma_m, fx = fetch_data(tickers, list(set(all_curr + ["EUR", "USD", "GBP"])))
 
-for c in ["Shares", "Buy Price", "Current Price", "Dividends EUR"]:
+df["Shares"] = pd.to_numeric(df["Shares"], errors="coerce").fillna(0.0).astype(float)
+df["Buy Price"] = pd.to_numeric(df["Buy Price"], errors="coerce").fillna(0.0).astype(float)
+df["Current Price"] = pd.to_numeric(df["Current Price"], errors="coerce").fillna(0.0).astype(float)
+df["Dividends EUR"] = pd.to_numeric(df["Dividends EUR"], errors="coerce").fillna(0.0).astype(float)
+
+df["Current Price"] = np.where(df["Ticker"].map(prices).notna(), df["Ticker"].map(prices), df["Current Price"]).astype(float)
