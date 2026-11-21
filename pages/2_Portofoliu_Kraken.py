@@ -131,10 +131,10 @@ c6.metric("Pierdere Totală (Neg.)", f"{gl:,.2f} {tc}", f"-{len(v[v['PnL'] < 0])
 f_earn = lambda x: "" if (pd.isna(x) or x == "" or float(x) <= 0) else f"{float(x):,.4f}"
 
 if not v.empty:
-    cols = ["Ticker", "Company", "Sector", "Shares", "Buy Price", "RSI", "SMA_Pct", "Current Price", "Currency", "Inv", "Mkt", "Earn", "PnL", "Ret", "Wgt"]
+    cols = ["Ticker", "Company", "Sector", "Shares", "Buy Price", "RSI", "SMA_Pct", "Current Price", "Inv", "Mkt", "Earn", "PnL", "Ret", "Wgt"]
     disp = v.reindex(columns=cols).copy()
     c_pnl_name = f"Profit / Pierdere ({tc})"
-    disp.columns = ["Tiker", "Companie", "Sector", "₿ Cantitate", "Preț mediu (EUR)", "RSI (14)", "vs SMA 200 %", "Preț curent (EUR)", "Monedă", f"Valoare investită ({tc})", f"Valoare piață ({tc})", f"Earn ({tc})", c_pnl_name, "Randament %", "Pondere %"]
+    disp.columns = ["Tiker", "Companie", "Sector", "₿ Cantitate", "Preț mediu (EUR)", "RSI (14)", "vs SMA 200 %", "Preț curent (EUR)", f"Valoare investită ({tc})", f"Valoare piață ({tc})", f"Earn ({tc})", c_pnl_name, "Randament %", "Pondere %"]
     fmt = {"₿ Cantitate": f_shares, "Preț mediu (EUR)": f_price, "RSI (14)": f_rsi, "vs SMA 200 %": f_sma, "Preț curent (EUR)": f_price, f"Valoare investită ({tc})": f_num2, f"Valoare piață ({tc})": f_num2, f"Earn ({tc})": f_earn, c_pnl_name: f_num2, "Randament %": f_pct, "Pondere %": f_pct}
     styler = clean_table(disp, fmt).style.map(c_pnl, subset=[c_pnl_name, "Randament %", "vs SMA 200 %"]).map(c_rsi, subset=["RSI (14)"])
     st.dataframe(styler, use_container_width=True, hide_index=True, height=400, column_config={"Tiker": st.column_config.TextColumn("Tiker", pinned=True)})
