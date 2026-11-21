@@ -116,6 +116,22 @@ def f_sma(v):
 def f_pct(v):
     return "-" if pd.isna(v) else f"{v:.2f}%"
 
+def quick_delete_widget(df_orig, cols, csv_path, key_prefix):
+    if df_orig.empty:
+        return
+    with st.expander("🗑️ Șterge rapid tikere din listă", expanded=False):
+        options = df_orig["Ticker"].dropna().unique().tolist()
+        to_del = st.multiselect("Selectează unul sau mai multe tikere de șters:", options, key=f"del_sel_{key_prefix}")
+        if st.button("Șterge tikerele selectate", type="secondary", key=f"del_btn_{key_prefix}"):
+            if to_del:
+                cleaned = df_orig[~df_orig["Ticker"].isin(to_del)][cols]
+                cleaned.to_csv(csv_path, index=False)
+                st.cache_data.clear()
+                st.success(f"S-au șters: {', '.join(to_del)}")
+                st.rerun()
+            else:
+                st.warning("Selectează cel puțin un tiker din listă.")
+
 if st.button("⬅️ Înapoi la Meniul Principal"):
     st.session_state.view_mode = "home"
     st.rerun()
@@ -129,8 +145,8 @@ if st.session_state.view_mode == "watch":
     w_cols = ["Ticker", "Company", "Sector", "Target Price", "Currency"]
     df = load_data(WATCH_CSV, w_cols).copy()
 
-    with st.expander("➕ Adaugă rapid mai multe tikere odată", expanded=True):
-        raw_tickers = st.text_area("Introdu simbolurile Yahoo Finance separate prin virgulă, spațiu sau pe rânduri noi:", placeholder="Ex: TSLA, KO, O, NVDA, BTC-EUR, RHM.DE, BATS.L", height=80)
+    with st.expander("➕ Adaugă rapid mai multe tikere odată", expanded=False):
+        raw_tickers = st.text_area("Introdu simbolurile Yahoo Finance separate prin virgulă, spațiu sau pe rânduri noi:", placeholder="Ex: TSLA, KO, O, NVDA, NKE, BTC-EUR, RHM.DE, BATS.L", height=80)
         if st.button("Adaugă în listă", type="primary"):
             new_list = [t.strip().upper() for t in raw_tickers.replace(",", " ").replace("\n", " ").split(" ") if t.strip()]
             existing = set(df["Ticker"].astype(str).str.upper().tolist())
@@ -157,6 +173,8 @@ if st.session_state.view_mode == "watch":
             else:
                 st.warning("Nu s-au găsit tikere noi de adăugat (sau există deja în listă).")
 
+    quick_delete_widget(df, w_cols, WATCH_CSV, "watch")
+
     tickers = df["Ticker"].dropna().unique().tolist()
     prices, prev_p, rsi_m, sma_m, _ = fetch_data(tickers, ["EUR", "USD", "GBP"])
     df["Target Price"] = pd.to_numeric(df["Target Price"], errors="coerce").fillna(0.0).astype(float)
@@ -176,7 +194,7 @@ if st.session_state.view_mode == "watch":
         fmt = dict([("Preț curent", f_price), ("Variație Azi %", f_sma), ("Preț Țintă", f_price), ("vs Țintă %", f_sma), ("RSI (14)", f_rsi), ("vs SMA 200 %", f_sma)])
         styler = disp.style.map(c_pnl, subset=["Variație Azi %", "vs SMA 200 %"]).map(c_target, subset=["vs Țintă %"]).map(c_rsi, subset=["RSI (14)"]).format(fmt)
         st.dataframe(styler, use_container_width=True, hide_index=True, height=450, column_config=dict(Tiker=st.column_config.TextColumn("Tiker", pinned=True)))
-    st.subheader(f"Editare sau ștergere ({WATCH_CSV.name})")
+    st.subheader(f"Editare prețuri țintă ({WATCH_CSV.name})")
     edited = st.data_editor(df[w_cols], num_rows="dynamic", use_container_width=True, key="ed_watch")
     if st.button(f"Salvează modificările în {WATCH_CSV.name}"):
         edited.to_csv(WATCH_CSV, index=False)
@@ -188,16 +206,3 @@ is_kraken = (st.session_state.view_mode == "kraken")
 st.title("🪙 Portofoliu Kraken" if is_kraken else "📈 Portofoliu XTB")
 csv_path = KRAKEN_CSV if is_kraken else XTB_CSV
 req = ["Ticker", "Company", "Sector", "Shares", "Buy Price", "Current Price", "Currency", "Dividends EUR"]
-df = load_data(csv_path, req).copy()
-if "Dividends EUR" not in df.columns: df["Dividends EUR"] = 0.0
-
-tickers = df["Ticker"].dropna().unique().tolist()
-all_curr = sorted(df["Currency"].dropna().unique().tolist()) or ["EUR", "USD"]
-prices, _, rsi_m, sma_m, fx = fetch_data(tickers, list(set(all_curr + ["EUR", "USD", "GBP"])))
-
-df["Shares"] = pd.to_numeric(df["Shares"], errors="coerce").fillna(0.0).astype(float)
-df["Buy Price"] = pd.to_numeric(df["Buy Price"], errors="coerce").fillna(0.0).astype(float)
-df["Current Price"] = pd.to_numeric(df["Current Price"], errors="coerce").fillna(0.0).astype(float)
-df["Dividends EUR"] = pd.to_numeric(df["Dividends EUR"], errors="coerce").fillna(0.0).astype(float)
-
-df["Current Price"] = np.where(df["Ticker"].map(prices).notna(), df["Ticker"].map(prices), df["Current Price"]).astype(float)
