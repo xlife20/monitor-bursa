@@ -11,13 +11,19 @@ st.markdown("""
     .summary-card {
         background-color: #161b22;
         border: 1px solid #30363d;
-        padding: 18px 20px;
+        padding: 20px;
         border-radius: 10px;
         text-align: center;
+        min-height: 145px;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
     }
-    .summary-label { font-size: 0.95rem; color: #9e9e9e; margin-bottom: 6px; }
-    .summary-val { font-size: 1.8rem; font-weight: 700; line-height: 1.2; }
-    .summary-sub { font-size: 0.85rem; margin-top: 6px; color: #9e9e9e; }
+    .summary-label { font-size: 0.95rem; color: #9e9e9e; margin-bottom: 8px; }
+    .summary-val { font-size: 1.85rem; font-weight: 700; line-height: 1.2; }
+    .summary-sub { font-size: 0.85rem; margin-top: 8px; color: #9e9e9e; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -56,7 +62,7 @@ pnl_sign = "+" if pnl_eur >= 0 else ""
 
 st.markdown("<br><h1 style='text-align: center;'>💼 Investiții</h1><br>", unsafe_allow_html=True)
 
-_, col_s1, col_s2, _ = st.columns([1.2, 1.5, 1.5, 1.2])
+_, col_s1, col_s2, _ = st.columns([1.1, 1.6, 1.6, 1.1])
 with col_s1:
     st.markdown(
         f"<div class='summary-card'>"
