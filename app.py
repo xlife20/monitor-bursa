@@ -11,8 +11,9 @@ st.markdown("""
     .summary-card {
         background-color: #161b22;
         border: 1px solid #30363d;
-        padding: 16px 20px;
+        padding: 18px 20px;
         border-radius: 10px;
+        text-align: center;
     }
     .summary-label { font-size: 0.95rem; color: #9e9e9e; margin-bottom: 6px; }
     .summary-val { font-size: 1.8rem; font-weight: 700; line-height: 1.2; }
@@ -27,9 +28,6 @@ CLOSED_DIVS_EUR = 18.24
 req = ["Ticker", "Company", "Sector", "Shares", "Buy Price", "Current Price", "Currency", "Dividends EUR"]
 df_xtb = load_csv(XTB_CSV, req).copy()
 df_krk = load_csv(KRAKEN_CSV, req).copy()
-
-df_xtb["Src"] = "XTB"
-df_krk["Src"] = "Kraken"
 df_all = pd.concat([df_xtb, df_krk], ignore_index=True)
 
 if "Dividends EUR" not in df_all.columns:
@@ -56,11 +54,9 @@ ret_pct = (pnl_eur / inv_eur * 100) if inv_eur > 0 else 0.0
 pnl_color = "#00e676" if pnl_eur >= 0 else "#ff5252"
 pnl_sign = "+" if pnl_eur >= 0 else ""
 
-st.write("")
-st.title("💼 Investiții")
-st.write("")
+st.markdown("<br><h1 style='text-align: center;'>💼 Investiții</h1><br>", unsafe_allow_html=True)
 
-col_s1, col_s2, _ = st.columns([1.4, 1.4, 2.2])
+_, col_s1, col_s2, _ = st.columns([1.2, 1.5, 1.5, 1.2])
 with col_s1:
     st.markdown(
         f"<div class='summary-card'>"
@@ -81,10 +77,9 @@ with col_s2:
         unsafe_allow_html=True
     )
 
-st.write("")
-st.write("Alege secțiunea pe care dorești să o accesezi:")
+st.markdown("<br><p style='text-align: center; color: #9e9e9e;'>Alege secțiunea pe care dorești să o accesezi:</p>", unsafe_allow_html=True)
 
-c1, c2, c3, _ = st.columns([1.2, 1.2, 1.2, 1.4])
+_, c1, c2, c3, _ = st.columns([1.0, 1.2, 1.2, 1.2, 1.0])
 if c1.button("📈 Portofoliu XTB", use_container_width=True, type="primary"):
     st.switch_page("pages/1_Portofoliu_XTB.py")
 if c2.button("🪙 Portofoliu Kraken", use_container_width=True, type="primary"):
