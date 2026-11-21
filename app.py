@@ -5,6 +5,29 @@ import yfinance as yf
 from pathlib import Path
 
 st.set_page_config(page_title="Portfolio Dashboard", layout="wide")
+
+# Stil CSS pentru fundal negru (Dark Mode) fortat
+st.markdown("""
+<style>
+    .stApp {
+        background-color: #0e1117;
+        color: #fafafa;
+    }
+    section[data-testid="stSidebar"] {
+        background-color: #161b22;
+    }
+    div[data-testid="stMetric"] {
+        background-color: #161b22;
+        border: 1px solid #30363d;
+        padding: 15px;
+        border-radius: 8px;
+    }
+    h1, h2, h3, p, label, .stMarkdown {
+        color: #fafafa !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 st.title("📊 Stock Portfolio Dashboard")
 st.caption("Prețuri și cursuri valutare live prin Yahoo Finance (cu rezervă din CSV).")
 
@@ -88,11 +111,15 @@ df["Current Price"] = pd.to_numeric(df["Current Price"], errors="coerce").fillna
 df["Live Price"] = df["Ticker"].map(live_prices)
 df["Current Price"] = np.where(df["Live Price"].notna(), df["Live Price"], df["Current Price"])
 
-# Filtre în bara laterală
+# Filtre și sortare în bara laterală
 st.sidebar.header("Setări afișare")
 target_currency = st.sidebar.selectbox("Monedă raportare (Total)", ["EUR", "USD", "GBP"])
 filter_options = ["Toate (Consolidat)"] + all_currencies
 currency_filter = st.sidebar.selectbox("Filtrare poziții după monedă", filter_options)
+sort_by = st.sidebar.selectbox(
+    "Ordonează tabelul după",
+    ["Valoare piață (Descrescător)", "Profit / Pierdere (Descrescător)", "Randament % (Descrescător)", "Simbol (A-Z)"]
+)
 
 # Conversie în moneda aleasă
 df["Rate_to_USD"] = df["Currency"].map(fx_to_usd).fillna(1.0)
@@ -108,6 +135,20 @@ if currency_filter == "Toate (Consolidat)":
     view = df.copy()
 else:
     view = df[df["Currency"] == currency_filter].copy()
+
+# Calcul pondere (%) în portofoliul afișat
+total_market_val = view["Market Value"].sum()
+view["Weight %"] = np.where(total_market_val != 0, view["Market Value"] / total_market_val * 100, 0)
+
+# Aplicare sortare
+if sort_by == "Valoare piață (Descrescător)":
+    view = view.sort_values(by="Market Value", ascending=False)
+elif sort_by == "Profit / Pierdere (Descrescător)":
+    view = view.sort_values(by="Profit/Loss", ascending=False)
+elif sort_by == "Randament % (Descrescător)":
+    view = view.sort_values(by="Return %", ascending=False)
+else:
+    view = view.sort_values(by="Ticker", ascending=True)
 
 eur_usd = fx_to_usd.get("EUR", 1.08)
 gbp_eur = fx_to_usd.get("GBP", 1.27) / eur_usd
@@ -135,28 +176,52 @@ c5.metric("Profit / Pierdere", f"{pnl:,.2f} {target_currency}", f"{ret:.2f}%")
 st.subheader(f"Portofoliu (Valori convertite în {target_currency})")
 display_cols = [
     "Ticker", "Company", "Sector", "Shares", "Buy Price", "Current Price", "Currency",
-    "Invested Value", "Market Value", "Profit/Loss", "Return %"
+    "Invested Value", "Market Value", "Weight %", "Profit/Loss", "Return %"
 ]
-st.dataframe(view[display_cols].style.format({
-    "Shares": "{:,.4g}",
-    "Buy Price": "{:,.2f}",
-    "Current Price": "{:,.2f}",
-    "Invested Value": "{:,.2f}",
-    "Market Value": "{:,.2f}",
-    "Profit/Loss": "{:,.2f}",
-    "Return %": "{:.2f}%"
-}), use_container_width=True, hide_index=True)
+
+# Culori luminoase optimizate pentru fundal negru
+def color_profit_loss(row):
+    if row["Profit/Loss"] > 0:
+        return ["color: #00e676; font-weight: 500;"] * len(row)
+    elif row["Profit/Loss"] < 0:
+        return ["color: #ff5252; font-weight: 500;"] * len(row)
+    return ["color: #fafafa;"] * len(row)
+
+styled_df = (
+    view[display_cols]
+    .style
+    .apply(color_profit_loss, axis=1)
+    .format({
+        "Shares": "{:,.4g}",
+        "Buy Price": "{:,.2f}",
+        "Current Price": "{:,.2f}",
+        "Invested Value": "{:,.2f}",
+        "Market Value": "{:,.2f}",
+        "Weight %": "{:.2f}%",
+        "Profit/Loss": "{:,.2f}",
+        "Return %": "{:.2f}%"
+    })
+)
+
+st.dataframe(styled_df, use_container_width=True, hide_index=True)
+
+# Grafice
+st.subheader(f"Profit / Pierdere per simbol ({target_currency})")
+if not view.empty:
+    pnl_chart_df = view.set_index("Ticker")[["Profit/Loss"]].copy()
+    pnl_chart_df["Color"] = np.where(pnl_chart_df["Profit/Loss"] >= 0, "#00e676", "#ff5252")
+    st.bar_chart(pnl_chart_df, y="Profit/Loss", color="Color")
 
 left, right = st.columns(2)
 with left:
     st.subheader(f"Valoare de piață per simbol ({target_currency})")
     if not view.empty:
-        st.bar_chart(view.set_index("Ticker")["Market Value"])
+        st.bar_chart(view.set_index("Ticker")["Market Value"], color="#29b6f6")
 with right:
     st.subheader(f"Alocare pe sectoare ({target_currency})")
     sector_values = view.groupby("Sector")["Market Value"].sum()
     if not sector_values.empty:
-        st.bar_chart(sector_values)
+        st.bar_chart(sector_values, color="#ab47bc")
 
 st.subheader("Editare poziții (în moneda originală)")
 edited = st.data_editor(view[required], num_rows="dynamic", use_container_width=True, key="portfolio_editor")
