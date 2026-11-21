@@ -31,7 +31,10 @@ st.markdown("""
         border: 1px solid #30363d;
         border-radius: 8px;
         background: #0e1117;
+        cursor: grab;
+        user-select: none;
     }
+    .tbl-box:active { cursor: grabbing; }
     .tbl-box table {
         width: 100%;
         border-collapse: separate;
@@ -70,10 +73,6 @@ st.markdown("""
         border-right: 1px solid #30363d;
     }
     .tbl-box tbody tr:hover td:first-child { background: #1c2128; }
-    .tbl-box::-webkit-scrollbar { width: 12px; height: 12px; }
-    .tbl-box::-webkit-scrollbar-track { background: #0e1117; }
-    .tbl-box::-webkit-scrollbar-thumb { background: #30363d; border-radius: 6px; }
-    .tbl-box::-webkit-scrollbar-thumb:hover { background: #58a6ff; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -227,12 +226,5 @@ t_df["Profit / Pierdere"] = view["PnL"].map(lambda x: f"<span style='color:{'#00
 t_df["Randament %"] = view["Ret"].map(lambda x: f"<span style='color:{'#00e676' if x>0 else ('#ff5252' if x<0 else '#fafafa')};font-weight:bold'>{x:.2f}%</span>")
 t_df["Pondere %"] = view["Wgt"].map(lambda x: f"{x:.2f}%")
 
-st.markdown(f"<div class='tbl-box'>{t_df.to_html(escape=False, index=False)}</div>", unsafe_allow_html=True)
+st.markdown(f"<div class='tbl-box' id='dragBox'>{t_df.to_html(escape=False, index=False)}</div>", unsafe_allow_html=True)
 
-st.write("")
-l1, r1 = st.columns(2)
-with l1:
-    st.subheader(f"Profit / Pierdere Total ({t_curr})")
-    if not view.empty:
-        p_df = view.set_index("Ticker")[["PnL"]].assign(Color=np.where(view["PnL"] >= 0, "#00e676", "#ff5252"))
-        st.bar_chart(p_df, y="PnL", color="Color")
