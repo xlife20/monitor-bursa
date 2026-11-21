@@ -14,252 +14,172 @@ st.markdown("""
         padding: 12px;
         border-radius: 8px;
     }
-    div[data-testid="stMetricValue"] {
-        font-size: 1.55rem !important;
-    }
-    .table-container {
-        max-height: 560px;
-        overflow-y: auto;
-        overflow-x: auto;
-        border: 1px solid #30363d;
-        border-radius: 8px;
-        background-color: #0e1117;
-    }
-    .table-container table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 14px;
-        color: #fafafa;
-    }
-    .table-container thead th {
-        position: sticky;
-        top: 0;
-        background-color: #161b22;
-        color: #fafafa;
-        z-index: 2;
-        padding: 10px 8px;
-        text-align: left;
-        border-bottom: 2px solid #30363d;
-        white-space: nowrap;
-    }
-    .table-container tbody td {
-        padding: 8px;
-        border-bottom: 1px solid #21262d;
-        white-space: nowrap;
-    }
-    .table-container tbody tr:hover {
-        background-color: #1c2128;
-    }
+    div[data-testid="stMetricValue"] { font-size: 1.55rem !important; }
+    .tbl-box { max-height: 550px; overflow: auto; border: 1px solid #30363d; border-radius: 8px; background: #0e1117; }
+    .tbl-box table { width: 100%; border-collapse: collapse; font-size: 14px; color: #fafafa; }
+    .tbl-box thead th { position: sticky; top: 0; background: #161b22; z-index: 2; padding: 10px 8px; text-align: left; border-bottom: 2px solid #30363d; white-space: nowrap; }
+    .tbl-box tbody td { padding: 8px; border-bottom: 1px solid #21262d; white-space: nowrap; }
+    .tbl-box tbody tr:hover { background: #1c2128; }
 </style>
 """, unsafe_allow_html=True)
 
 st.title("📊 Panou de Control Portofoliu")
-st.caption("Prețuri, indicatori tehnici (RSI 14, vs SMA 200 %), cursuri valutare live și dividende nete încasate din XTB.")
+st.caption("Prețuri, indicatori tehnici (RSI 14, vs SMA 200 %), cursuri valutare live și dividende nete din XTB.")
 
 CSV_PATH = Path(__file__).with_name("portfolio.csv")
-CLOSED_POSITIONS_DIVIDENDS_EUR = 18.24
+CLOSED_DIVS_EUR = 18.24
 
 @st.cache_data
 def load_data():
     return pd.read_csv(CSV_PATH)
 
-def compute_rsi(series, period=14):
-    s = series.dropna()
-    if len(s) < period + 1:
-        return np.nan
-    delta = s.diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
-    avg_gain = gain.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
-    avg_loss = loss.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
-    rs = avg_gain / avg_loss
-    rsi = 100 - (100 / (1 + rs))
-    return float(rsi.iloc[-1])
+def calc_rsi(s, p=14):
+    s = s.dropna()
+    if len(s) < p + 1: return np.nan
+    d = s.diff()
+    ag = d.clip(lower=0).ewm(alpha=1/p, min_periods=p, adjust=False).mean()
+    al = (-d.clip(upper=0)).ewm(alpha=1/p, min_periods=p, adjust=False).mean()
+    return float((100 - (100 / (1 + ag / al))).iloc[-1])
 
-def compute_sma200(series, scale=1.0):
-    s = series.dropna()
-    if len(s) < 200:
-        return np.nan
-    return float(s.iloc[-200:].mean()) * scale
+def calc_sma(s, sc=1.0):
+    s = s.dropna()
+    return float(s.iloc[-200:].mean()) * sc if len(s) >= 200 else np.nan
 
 @st.cache_data(ttl=300)
-def fetch_live_market_data(tickers, currencies):
-    prices = dict()
-    rsi_map = dict()
-    sma200_map = dict()
-    fx_rates = dict(USD=1.0)
-    uk_pence_tickers = ["DGE.L", "BATS.L", "ABF.L"]
-
+def fetch_data(tickers, currencies):
+    prices, rsi_m, sma_m = dict(), dict(), dict()
+    fx = dict(USD=1.0)
+    uk = ["DGE.L", "BATS.L", "ABF.L"]
     if tickers:
         try:
             data = yf.download(tickers, period="1y", progress=False)["Close"]
-            if isinstance(data, pd.Series):
-                t = tickers[0] if isinstance(tickers, list) else tickers
-                s = data.dropna()
+            for t in ([tickers] if isinstance(tickers, str) else tickers):
+                s = data.dropna() if isinstance(data, pd.Series) else (data[t].dropna() if t in data.columns else pd.Series())
                 if not s.empty:
-                    scale = 0.01 if t in uk_pence_tickers else 1.0
-                    prices[t] = float(s.iloc[-1]) * scale
-                    rsi_map[t] = compute_rsi(s)
-                    sma200_map[t] = compute_sma200(s, scale)
-            else:
-                for t in tickers:
-                    if t in data.columns:
-                        s = data[t].dropna()
-                        if not s.empty:
-                            scale = 0.01 if t in uk_pence_tickers else 1.0
-                            prices[t] = float(s.iloc[-1]) * scale
-                            rsi_map[t] = compute_rsi(s)
-                            sma200_map[t] = compute_sma200(s, scale)
+                    sc = 0.01 if t in uk else 1.0
+                    prices[t] = float(s.iloc[-1]) * sc
+                    rsi_m[t] = calc_rsi(s)
+                    sma_m[t] = calc_sma(s, sc)
         except Exception:
             pass
-
-    other_curr = [c for c in currencies if c != "USD"]
-    fx_tickers = [c + "USD=X" for c in other_curr]
-    fallback_to_usd = dict(EUR=1.08, GBP=1.27, RON=0.22)
-
-    if fx_tickers:
+    other = [c for c in currencies if c != "USD"]
+    fb = dict(EUR=1.08, GBP=1.27, RON=0.22)
+    if other:
         try:
-            fx_data = yf.download(fx_tickers, period="5d", progress=False)["Close"]
-            if isinstance(fx_data, pd.Series):
-                c = other_curr[0]
-                if not fx_data.dropna().empty:
-                    fx_rates[c] = float(fx_data.dropna().iloc[-1])
-            else:
-                for c in other_curr:
-                    ft = c + "USD=X"
-                    if ft in fx_data.columns and not fx_data[ft].dropna().empty:
-                        fx_rates[c] = float(fx_data[ft].dropna().iloc[-1])
+            fxd = yf.download([c + "USD=X" for c in other], period="5d", progress=False)["Close"]
+            for c in other:
+                ft = c + "USD=X"
+                s = fxd.dropna() if isinstance(fxd, pd.Series) else (fxd[ft].dropna() if ft in fxd.columns else pd.Series())
+                if not s.empty: fx[c] = float(s.iloc[-1])
         except Exception:
             pass
-
-    for c in other_curr:
-        if c not in fx_rates:
-            fx_rates[c] = fallback_to_usd.get(c, 1.0)
-
-    return prices, rsi_map, sma200_map, fx_rates
+    for c in other:
+        fx[c] = fx.get(c, fb.get(c, 1.0))
+    return prices, rsi_m, sma_m, fx
 
 df = load_data()
-if "Dividends EUR" not in df.columns:
-    df["Dividends EUR"] = 0.0
-
-required = ["Ticker", "Company", "Sector", "Shares", "Buy Price", "Current Price", "Currency", "Dividends EUR"]
-for col in ["Ticker", "Company", "Sector", "Shares", "Buy Price", "Current Price", "Currency"]:
-    if col not in df.columns:
-        st.error("Lipsește coloana: " + col)
-        st.stop()
+if "Dividends EUR" not in df.columns: df["Dividends EUR"] = 0.0
+req = ["Ticker", "Company", "Sector", "Shares", "Buy Price", "Current Price", "Currency", "Dividends EUR"]
 
 if st.sidebar.button("🔄 Actualizează prețurile live"):
     st.cache_data.clear()
     st.rerun()
 
 tickers = df["Ticker"].dropna().unique().tolist()
-all_currencies = sorted(df["Currency"].dropna().unique().tolist()) or ["EUR", "USD"]
-live_prices, rsi_map, sma200_map, fx_to_usd = fetch_live_market_data(
-    tickers, list(set(all_currencies + ["EUR", "USD", "GBP"]))
-)
+all_curr = sorted(df["Currency"].dropna().unique().tolist()) or ["EUR", "USD"]
+prices, rsi_m, sma_m, fx = fetch_data(tickers, list(set(all_curr + ["EUR", "USD", "GBP"])))
 
-df["Shares"] = pd.to_numeric(df["Shares"], errors="coerce").fillna(0)
-df["Buy Price"] = pd.to_numeric(df["Buy Price"], errors="coerce").fillna(0)
-df["Current Price"] = pd.to_numeric(df["Current Price"], errors="coerce").fillna(0)
-df["Dividends EUR"] = pd.to_numeric(df["Dividends EUR"], errors="coerce").fillna(0)
+for c in ["Shares", "Buy Price", "Current Price", "Dividends EUR"]:
+    df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
 
-df["Live Price"] = df["Ticker"].map(live_prices)
-df["Current Price"] = np.where(df["Live Price"].notna(), df["Live Price"], df["Current Price"])
-df["RSI"] = df["Ticker"].map(rsi_map)
-df["SMA200"] = df["Ticker"].map(sma200_map)
-df["SMA200_Pct"] = np.where(df["SMA200"].notna() & (df["SMA200"] != 0), (df["Current Price"] - df["SMA200"]) / df["SMA200"] * 100, np.nan)
+df["Current Price"] = np.where(df["Ticker"].map(prices).notna(), df["Ticker"].map(prices), df["Current Price"])
+df["RSI"] = df["Ticker"].map(rsi_m)
+df["SMA200"] = df["Ticker"].map(sma_m)
+df["SMA_Pct"] = np.where(df["SMA200"].notna() & (df["SMA200"] != 0), (df["Current Price"] - df["SMA200"]) / df["SMA200"] * 100, np.nan)
 
 st.sidebar.header("Setări afișare")
-target_currency = st.sidebar.selectbox("Monedă raportare (Total)", ["EUR", "USD", "GBP"])
-filter_options = ["Toate (Consolidat)"] + all_currencies
-currency_filter = st.sidebar.selectbox("Filtrare poziții după monedă", filter_options)
-sort_by = st.sidebar.selectbox(
-    "Ordonează tabelul după",
-    [
-        "Valoare piață (Descrescător)",
-        "Profit Total (Descrescător)",
-        "Dividende (Descrescător)",
-        "Randament Total % (Descrescător)",
-        "RSI (Crescător - Supravândute)",
-        "vs SMA 200 % (Crescător)",
-        "Simbol (A-Z)"
-    ]
-)
+t_curr = st.sidebar.selectbox("Monedă raportare (Total)", ["EUR", "USD", "GBP"])
+c_filt = st.sidebar.selectbox("Filtrare poziții după monedă", ["Toate (Consolidat)"] + all_curr)
+sort_by = st.sidebar.selectbox("Ordonează tabelul după", ["Valoare piață", "Profit Total", "Dividende", "Randament %", "RSI (Crescător)", "vs SMA 200 %", "Simbol"])
 
-df["Rate_to_USD"] = df["Currency"].map(fx_to_usd).fillna(1.0)
-target_rate_to_usd = fx_to_usd.get(target_currency, 1.0)
-eur_to_target = fx_to_usd.get("EUR", 1.08) / target_rate_to_usd
-df["FX_Multiplier"] = df["Rate_to_USD"] / target_rate_to_usd
+t_rate = fx.get(t_curr, 1.0)
+eur_rate = fx.get("EUR", 1.08) / t_rate
+mult = df["Currency"].map(fx).fillna(1.0) / t_rate
 
-df["Invested Value"] = df["Shares"] * df["Buy Price"] * df["FX_Multiplier"]
-df["Market Value"] = df["Shares"] * df["Current Price"] * df["FX_Multiplier"]
-df["Dividends"] = df["Dividends EUR"] * eur_to_target
-df["Price P/L"] = df["Market Value"] - df["Invested Value"]
-df["Total P/L"] = df["Price P/L"] + df["Dividends"]
-df["Total Return %"] = np.where(df["Invested Value"] != 0, df["Total P/L"] / df["Invested Value"] * 100, 0)
+df["Inv"] = df["Shares"] * df["Buy Price"] * mult
+df["Mkt"] = df["Shares"] * df["Current Price"] * mult
+df["Div"] = df["Dividends EUR"] * eur_rate
+df["PnL"] = (df["Mkt"] - df["Inv"]) + df["Div"]
+df["Ret"] = np.where(df["Inv"] != 0, df["PnL"] / df["Inv"] * 100, 0)
 
-if currency_filter == "Toate (Consolidat)":
-    view = df.copy()
-    extra_closed_divs = CLOSED_POSITIONS_DIVIDENDS_EUR * eur_to_target
-else:
-    view = df[df["Currency"] == currency_filter].copy()
-    extra_closed_divs = 0.0
+view = df.copy() if c_filt == "Toate (Consolidat)" else df[df["Currency"] == c_filt].copy()
+extra_div = CLOSED_DIVS_EUR * eur_rate if c_filt == "Toate (Consolidat)" else 0.0
+tot_mkt = view["Mkt"].sum()
+view["Wgt"] = np.where(tot_mkt != 0, view["Mkt"] / tot_mkt * 100, 0)
 
-total_market_val = view["Market Value"].sum()
-view["Weight %"] = np.where(total_market_val != 0, view["Market Value"] / total_market_val * 100, 0)
+s_map = {"Valoare piață": ("Mkt", False), "Profit Total": ("PnL", False), "Dividende": ("Div", False), "Randament %": ("Ret", False), "RSI (Crescător)": ("RSI", True), "vs SMA 200 %": ("SMA_Pct", True), "Simbol": ("Ticker", True)}
+col_s, asc_s = s_map[sort_by]
+view = view.sort_values(by=col_s, ascending=asc_s, na_position="last")
 
-if sort_by == "Valoare piață (Descrescător)":
-    view = view.sort_values(by="Market Value", ascending=False)
-elif sort_by == "Profit Total (Descrescător)":
-    view = view.sort_values(by="Total P/L", ascending=False)
-elif sort_by == "Dividende (Descrescător)":
-    view = view.sort_values(by="Dividends", ascending=False)
-elif sort_by == "Randament Total % (Descrescător)":
-    view = view.sort_values(by="Total Return %", ascending=False)
-elif sort_by == "RSI (Crescător - Supravândute)":
-    view = view.sort_values(by="RSI", ascending=True, na_position="last")
-elif sort_by == "vs SMA 200 % (Crescător)":
-    view = view.sort_values(by="SMA200_Pct", ascending=True, na_position="last")
-else:
-    view = view.sort_values(by="Ticker", ascending=True)
+st.sidebar.info(f"Prețuri live: {len(prices)}/{len(tickers)}\n\n1 EUR = {fx.get('EUR', 1.08):.4f} USD\n\n1 GBP = {fx.get('GBP', 1.27)/fx.get('EUR', 1.08):.4f} EUR")
 
-eur_usd = fx_to_usd.get("EUR", 1.08)
-gbp_eur = fx_to_usd.get("GBP", 1.27) / eur_usd
-st.sidebar.info(
-    f"Prețuri live: {len(live_prices)}/{len(tickers)} simboluri\n\n"
-    f"**Cursuri live:**\n"
-    f"- 1 EUR = {eur_usd:.4f} USD\n"
-    f"- 1 GBP = {gbp_eur:.4f} EUR"
-)
-
-invested = view["Invested Value"].sum()
-market = view["Market Value"].sum()
-open_divs = view["Dividends"].sum()
-total_divs = open_divs + extra_closed_divs
-total_pnl = (market - invested) + total_divs
-total_ret = total_pnl / invested * 100 if invested else 0
+inv_s, mkt_s, div_s = view["Inv"].sum(), view["Mkt"].sum(), view["Div"].sum() + extra_div
+pnl_s = (mkt_s - inv_s) + div_s
+ret_s = pnl_s / inv_s * 100 if inv_s else 0
 
 c1, c2, c3, c4, c5 = st.columns([0.8, 1.2, 1.2, 1.2, 1.4])
 c1.metric("Poziții", f"{len(view)}")
-c2.metric("Capital investit", f"{invested:,.2f} {target_currency}")
-c3.metric("Valoare piață", f"{market:,.2f} {target_currency}")
-c4.metric("Dividende nete", f"{total_divs:,.2f} {target_currency}", f"+{extra_closed_divs:,.2f} din închise" if extra_closed_divs > 0 else None)
-c5.metric("Profit Total (+Div.)", f"{total_pnl:,.2f} {target_currency}", f"{total_ret:.2f}%")
+c2.metric("Capital investit", f"{inv_s:,.2f} {t_curr}")
+c3.metric("Valoare piață", f"{mkt_s:,.2f} {t_curr}")
+c4.metric("Dividende nete", f"{div_s:,.2f} {t_curr}", f"+{extra_div:,.2f} închise" if extra_div > 0 else None)
+c5.metric("Profit Total (+Div.)", f"{pnl_s:,.2f} {t_curr}", f"{ret_s:.2f}%")
 
-st.subheader(f"Portofoliu (Valori convertite în {target_currency})")
+st.subheader(f"Portofoliu (Valori convertite în {t_curr})")
 
-display_df = view[[
-    "Ticker", "Company", "Sector", "Shares", "Buy Price", "RSI", "SMA200_Pct", "Current Price", "Currency",
-    "Invested Value", "Market Value", "Dividends", "Total P/L", "Total Return %", "Weight %"
-]].copy()
+t_df = pd.DataFrame()
+t_df["Simbol"] = "<b>" + view["Ticker"] + "</b>"
+t_df["Companie"] = view["Company"]
+t_df["Sector"] = view["Sector"]
+t_df["Acțiuni"] = view["Shares"].map(lambda x: f"{x:,.4g}")
+t_df["Preț mediu"] = view["Buy Price"].map(lambda x: f"{x:,.2f}")
+t_df["RSI (14)"] = view["RSI"].map(lambda x: "-" if pd.isna(x) else f"<span style='color:{'#00e676' if x<=30 else ('#ff5252' if x>=70 else '#fafafa')};font-weight:bold'>{x:.1f}</span>")
+t_df["vs SMA 200 %"] = view["SMA_Pct"].map(lambda x: "-" if pd.isna(x) else f"<span style='color:{'#00e676' if x>0 else '#ff5252'};font-weight:bold'>{x:+.2f}%</span>")
+t_df["Preț curent"] = view["Current Price"].map(lambda x: f"{x:,.2f}")
+t_df["Monedă"] = view["Currency"]
+t_df["Valoare investită"] = view["Inv"].map(lambda x: f"{x:,.2f}")
+t_df["Valoare piață"] = view["Mkt"].map(lambda x: f"{x:,.2f}")
+t_df["Dividende"] = view["Div"].map(lambda x: f"{x:,.2f}")
+t_df["Profit / Pierdere"] = view["PnL"].map(lambda x: f"<span style='color:{'#00e676' if x>0 else ('#ff5252' if x<0 else '#fafafa')};font-weight:bold'>{x:,.2f}</span>")
+t_df["Randament %"] = view["Ret"].map(lambda x: f"<span style='color:{'#00e676' if x>0 else ('#ff5252' if x<0 else '#fafafa')};font-weight:bold'>{x:.2f}%</span>")
+t_df["Pondere %"] = view["Wgt"].map(lambda x: f"{x:.2f}%")
 
-display_df.columns = [
-    "Simbol", "Companie", "Sector", "Acțiuni", "Preț mediu", "RSI (14)", "vs SMA 200 %",
-    "Preț curent", "Monedă", "Valoare investită", "Valoare piață", "Dividende",
-    "Profit / Pierdere", "Randament %", "Pondere %"
-]
+st.markdown(f"<div class='tbl-box'>{t_df.to_html(escape=False, index=False)}</div>", unsafe_allow_html=True)
 
-def render_html_table(df_in):
-    headers = "".join(["<th>" + str(col) + "</th>" for col in df_in.columns])
-    rows_html = []
-    for _, r in df_in.iterrows():
+st.write("")
+l1, r1 = st.columns(2)
+with l1:
+    st.subheader(f"Profit / Pierdere Total ({t_curr})")
+    if not view.empty:
+        p_df = view.set_index("Ticker")[["PnL"]].assign(Color=np.where(view["PnL"] >= 0, "#00e676", "#ff5252"))
+        st.bar_chart(p_df, y="PnL", color="Color")
+with r1:
+    st.subheader(f"Dividende încasate ({t_curr})")
+    dv = view[view["Div"] > 0].sort_values(by="Div", ascending=False)
+    if not dv.empty: st.bar_chart(dv.set_index("Ticker")["Div"], color="#ffd54f")
+
+l2, r2 = st.columns(2)
+with l2:
+    st.subheader(f"Valoare de piață ({t_curr})")
+    if not view.empty: st.bar_chart(view.set_index("Ticker")["Mkt"], color="#29b6f6")
+with r2:
+    st.subheader(f"Alocare pe sectoare ({t_curr})")
+    sv = view.groupby("Sector")["Mkt"].sum()
+    if not sv.empty: st.bar_chart(sv, color="#ab47bc")
+
+st.subheader("Editare poziții (în moneda originală)")
+edited = st.data_editor(view[req], num_rows="dynamic", use_container_width=True, key="portfolio_editor")
+if st.button("Salvează modificările în portfolio.csv"):
+    up = edited if c_filt == "Toate (Consolidat)" else pd.concat([df[df["Currency"] != c_filt][req], edited], ignore_index=True)
+    up.to_csv(CSV_PATH, index=False)
+    st.cache_data.clear()
+    st.success("Salvat! Reîncarcă pagina.")
