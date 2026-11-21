@@ -67,10 +67,13 @@ df["RSI"] = pd.to_numeric(df["Ticker"].map(rsi_m), errors="coerce").astype(float
 df["SMA200"] = pd.to_numeric(df["Ticker"].map(sma_m), errors="coerce").astype(float)
 df["SMA_Pct"] = np.where(df["SMA200"].notna() & (df["SMA200"] != 0), (df["Current"] - df["SMA200"]) / df["SMA200"] * 100, np.nan).astype(float)
 
+def f_avg_blank(v):
+    return "" if pd.isna(v) else (f"{v:,.4f}" if abs(v) < 2 else f"{v:,.2f}")
+
 if not df.empty:
     disp = df[["Ticker", "Company", "Currency", "Sector", "Avg_Price", "Current", "RSI", "SMA_Pct"]].copy()
     disp.columns = ["Tiker", "Companie", "Monedă", "Sector", "Preț mediu", "Preț curent", "RSI (14)", "vs SMA 200 %"]
-    fmt = dict([("Preț mediu", f_price), ("Preț curent", f_price), ("RSI (14)", f_rsi), ("vs SMA 200 %", f_sma)])
+    fmt = dict([("Preț mediu", f_avg_blank), ("Preț curent", f_price), ("RSI (14)", f_rsi), ("vs SMA 200 %", f_sma)])
     styler = disp.style.map(c_pnl, subset=["vs SMA 200 %"]).map(c_rsi, subset=["RSI (14)"]).format(fmt)
     st.dataframe(styler, use_container_width=True, hide_index=True, height=450, column_config=dict(Tiker=st.column_config.TextColumn("Tiker", pinned=True)))
 
