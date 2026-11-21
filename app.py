@@ -68,6 +68,14 @@ def c_rsi(v):
     if pd.isna(v): return ""
     return "color: #00e676; font-weight: bold;" if v <= 30 else ("color: #ff5252; font-weight: bold;" if v >= 70 else "")
 
+def fmt_price(v):
+    if pd.isna(v): return "-"
+    return f"{v:,.4f}" if abs(v) < 2 else f"{v:,.2f}"
+
+def fmt_shares(v):
+    if pd.isna(v): return "-"
+    return f"{v:,.6f}".rstrip("0").rstrip(".")
+
 def render_portfolio(is_kraken):
     if st.button("⬅️ Înapoi la Meniul Principal"):
         st.switch_page(home_page)
@@ -130,8 +138,9 @@ def render_portfolio(is_kraken):
         cols = ["Ticker", "Company", "Sector", "Shares", "Buy Price", "RSI", "SMA_Pct", "Current Price", "Currency", "Inv", "Mkt"] + ([] if is_kraken else ["Div"]) + ["PnL", "Ret", "Wgt"]
         disp = view[cols].copy()
         disp.columns = ["Tiker", "Companie", "Sector", "Acțiuni", "Preț mediu", "RSI (14)", "vs SMA 200 %", "Preț curent", "Monedă", "Valoare investită", "Valoare piață"] + ([] if is_kraken else ["Dividende"]) + ["Profit / Pierdere", "Randament %", "Pondere %"]
-        disp = disp.round({"Acțiuni": 6 if is_kraken else 4, "Preț mediu": 4 if is_kraken else 2, "RSI (14)": 1, "vs SMA 200 %": 2, "Preț curent": 4 if is_kraken else 2, "Valoare investită": 2, "Valoare piață": 2, "Dividende": 2, "Profit / Pierdere": 2, "Randament %": 2, "Pondere %": 2})
-        styler = disp.style.map(c_pnl, subset=["Profit / Pierdere", "Randament %", "vs SMA 200 %"]).map(c_rsi, subset=["RSI (14)"])
+        fmt = dict([("Acțiuni", fmt_shares), ("Preț mediu", fmt_price), ("RSI (14)", "{:.1f}"), ("vs SMA 200 %", "{:+.2f}%"), ("Preț curent", fmt_price), ("Valoare investită", "{:,.2f}"), ("Valoare piață", "{:,.2f}"), ("Profit / Pierdere", "{:,.2f}"), ("Randament %", "{:.2f}%"), ("Pondere %", "{:.2f}%")])
+        if not is_kraken: fmt["Dividende"] = "{:,.2f}"
+        styler = disp.style.map(c_pnl, subset=["Profit / Pierdere", "Randament %", "vs SMA 200 %"]).map(c_rsi, subset=["RSI (14)"]).format(fmt, na_rep="-")
         st.dataframe(styler, use_container_width=True, hide_index=True, height=550, column_config=dict(Tiker=st.column_config.TextColumn("Tiker", pinned=True)))
         l1, r1 = st.columns(2)
         with l1:
@@ -164,5 +173,3 @@ def page_kraken():
 
 home_page = st.Page(page_home, title="Meniu Principal", default=True)
 xtb_page = st.Page(page_xtb, title="Portofoliu XTB")
-kraken_page = st.Page(page_kraken, title="Portofoliu Kraken")
-st.navigation([home_page, xtb_page, kraken_page], position="hidden").run()
