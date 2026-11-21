@@ -8,7 +8,7 @@ def load_csv(csv_path, cols):
     if not csv_path.exists():
         return pd.DataFrame(columns=cols)
     df = pd.read_csv(csv_path)
-    return df.fillna("") if df.select_dtypes(include=['object', 'string']).shape[1] > 0 else df
+    return df.fillna("")
 
 def get_meta(symbol):
     comp, sec, curr = symbol, "Acțiuni", "USD"
@@ -88,29 +88,40 @@ def fetch_annual_dividends(tickers):
     return div_rate
 
 def c_pnl(v):
-    if pd.isna(v) or v == "": return ""
-    return "color: #00e676; font-weight: bold;" if v > 0 else ("color: #ff5252; font-weight: bold;" if v < 0 else "")
-
-def c_target(v):
-    if pd.isna(v) or v == "": return ""
-    return "color: #00e676; font-weight: bold;" if v <= 0 else "color: #ffab40;"
+    if pd.isna(v) or str(v).strip() == "": return ""
+    try:
+        num = float(str(v).replace(",", "").replace("%", "").replace("+", ""))
+        return "color: #00e676; font-weight: bold;" if num > 0 else ("color: #ff5252; font-weight: bold;" if num < 0 else "")
+    except:
+        return ""
 
 def c_rsi(v):
-    if pd.isna(v) or v == "": return ""
-    return "color: #00e676; font-weight: bold;" if v <= 30 else ("color: #ff5252; font-weight: bold;" if v >= 70 else "")
+    if pd.isna(v) or str(v).strip() == "": return ""
+    try:
+        num = float(str(v).replace("%", ""))
+        return "color: #00e676; font-weight: bold;" if num <= 30 else ("color: #ff5252; font-weight: bold;" if num >= 70 else "")
+    except:
+        return ""
 
 def f_price(v):
-    return "" if (pd.isna(v) or v == "") else (f"{v:,.4f}" if abs(v) < 2 else f"{v:,.2f}")
+    return "" if (pd.isna(v) or v == "") else (f"{float(v):,.4f}" if abs(float(v)) < 2 else f"{float(v):,.2f}")
 
 def f_shares(v):
     if pd.isna(v) or v == "": return ""
-    s = f"{v:,.6f}".rstrip("0").rstrip(".")
+    s = f"{float(v):,.6f}".rstrip("0").rstrip(".")
     return s if s else "0"
 
-def f_num2(v): return "" if (pd.isna(v) or v == "") else f"{v:,.2f}"
-def f_rsi(v): return "" if (pd.isna(v) or v == "") else f"{v:.1f}%"
-def f_sma(v): return "" if (pd.isna(v) or v == "") else f"{v:+.2f}%"
-def f_pct(v): return "" if (pd.isna(v) or v == "") else f"{v:.2f}%"
+def f_num2(v): return "" if (pd.isna(v) or v == "") else f"{float(v):,.2f}"
+def f_rsi(v): return "" if (pd.isna(v) or v == "") else f"{float(v):.1f}%"
+def f_sma(v): return "" if (pd.isna(v) or v == "") else f"{float(v):+.2f}%"
+def f_pct(v): return "" if (pd.isna(v) or v == "") else f"{float(v):.2f}%"
+
+def clean_table(df, fmt_dict):
+    out = df.copy()
+    for col, func in fmt_dict.items():
+        if col in out.columns:
+            out[col] = out[col].apply(func)
+    return out.fillna("")
 
 def quick_del(df_orig, cols, csv_path, kp):
     if df_orig.empty: return
