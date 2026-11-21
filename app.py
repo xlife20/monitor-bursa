@@ -4,7 +4,7 @@ import numpy as np
 import yfinance as yf
 from pathlib import Path
 
-st.set_page_config(page_title="Portfolio Dashboard", layout="wide")
+st.set_page_config(page_title="Panou Portofoliu", layout="wide")
 
 # Stil CSS pentru fundal negru (Dark Mode) fortat
 st.markdown("""
@@ -28,10 +28,13 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("📊 Stock Portfolio Dashboard")
-st.caption("Prețuri și cursuri valutare live prin Yahoo Finance (cu rezervă din CSV).")
+st.title("📊 Panou de Control Portofoliu")
+st.caption("Prețuri, cursuri valutare live (Yahoo Finance) și dividende nete încasate din XTB.")
 
 CSV_PATH = Path(__file__).with_name("portfolio.csv")
+
+# Dividende nete încasate din poziții închise anterior (KVUE, WEN, UPS, MRK, NVDA, UNH, VSNT) în EUR
+CLOSED_POSITIONS_DIVIDENDS_EUR = 18.24
 
 @st.cache_data
 def load_data():
@@ -42,10 +45,8 @@ def fetch_live_market_data(tickers, currencies):
     prices = {}
     fx_rates = {"USD": 1.0}
 
-    # Simbolurile de pe bursa din Londra cotate în pence (GBX) în loc de lire (GBP)
     uk_pence_tickers = {"DGE.L", "BATS.L", "ABF.L"}
 
-    # 1. Prețuri acțiuni
     if tickers:
         try:
             data = yf.download(tickers, period="5d", progress=False)["Close"]
@@ -62,7 +63,6 @@ def fetch_live_market_data(tickers, currencies):
         except Exception:
             pass
 
-    # 2. Cursuri valutare live față de USD
     other_curr = [c for c in currencies if c != "USD"]
     fx_tickers = [f"{c}USD=X" for c in other_curr]
     fallback_to_usd = {"EUR": 1.08, "GBP": 1.27, "RON": 0.22}
@@ -89,13 +89,16 @@ def fetch_live_market_data(tickers, currencies):
     return prices, fx_rates
 
 df = load_data()
-required = ["Ticker", "Company", "Sector", "Shares", "Buy Price", "Current Price", "Currency"]
-for col in required:
+if "Dividends EUR" not in df.columns:
+    df["Dividends EUR"] = 0.0
+
+required = ["Ticker", "Company", "Sector", "Shares", "Buy Price", "Current Price", "Currency", "Dividends EUR"]
+for col in ["Ticker", "Company", "Sector", "Shares", "Buy Price", "Current Price", "Currency"]:
     if col not in df.columns:
-        st.error(f"Missing column: {col}")
+        st.error(f"Lipsește coloana: {col}")
         st.stop()
 
-if st.sidebar.button("🔄 Refresh Live Prices"):
+if st.sidebar.button("🔄 Actualizează prețurile live"):
     st.cache_data.clear()
     st.rerun()
 
@@ -106,6 +109,7 @@ live_prices, fx_to_usd = fetch_live_market_data(tickers, list(set(all_currencies
 df["Shares"] = pd.to_numeric(df["Shares"], errors="coerce").fillna(0)
 df["Buy Price"] = pd.to_numeric(df["Buy Price"], errors="coerce").fillna(0)
 df["Current Price"] = pd.to_numeric(df["Current Price"], errors="coerce").fillna(0)
+df["Dividends EUR"] = pd.to_numeric(df["Dividends EUR"], errors="coerce").fillna(0)
 
 # Actualizare prețuri live
 df["Live Price"] = df["Ticker"].map(live_prices)
@@ -118,35 +122,46 @@ filter_options = ["Toate (Consolidat)"] + all_currencies
 currency_filter = st.sidebar.selectbox("Filtrare poziții după monedă", filter_options)
 sort_by = st.sidebar.selectbox(
     "Ordonează tabelul după",
-    ["Valoare piață (Descrescător)", "Profit / Pierdere (Descrescător)", "Randament % (Descrescător)", "Simbol (A-Z)"]
+    [
+        "Valoare piață (Descrescător)",
+        "Profit Total (Descrescător)",
+        "Dividende (Descrescător)",
+        "Randament Total % (Descrescător)",
+        "Simbol (A-Z)"
+    ]
 )
 
 # Conversie în moneda aleasă
 df["Rate_to_USD"] = df["Currency"].map(fx_to_usd).fillna(1.0)
 target_rate_to_usd = fx_to_usd.get(target_currency, 1.0)
+eur_to_target = fx_to_usd.get("EUR", 1.08) / target_rate_to_usd
 df["FX_Multiplier"] = df["Rate_to_USD"] / target_rate_to_usd
 
 df["Invested Value"] = df["Shares"] * df["Buy Price"] * df["FX_Multiplier"]
 df["Market Value"] = df["Shares"] * df["Current Price"] * df["FX_Multiplier"]
-df["Profit/Loss"] = df["Market Value"] - df["Invested Value"]
-df["Return %"] = np.where(df["Invested Value"] != 0, df["Profit/Loss"] / df["Invested Value"] * 100, 0)
+df["Dividends"] = df["Dividends EUR"] * eur_to_target
+df["Price P/L"] = df["Market Value"] - df["Invested Value"]
+df["Total P/L"] = df["Price P/L"] + df["Dividends"]
+df["Total Return %"] = np.where(df["Invested Value"] != 0, df["Total P/L"] / df["Invested Value"] * 100, 0)
 
 if currency_filter == "Toate (Consolidat)":
     view = df.copy()
+    extra_closed_divs = CLOSED_POSITIONS_DIVIDENDS_EUR * eur_to_target
 else:
     view = df[df["Currency"] == currency_filter].copy()
+    extra_closed_divs = 0.0
 
-# Calcul pondere (%) în portofoliul afișat
 total_market_val = view["Market Value"].sum()
 view["Weight %"] = np.where(total_market_val != 0, view["Market Value"] / total_market_val * 100, 0)
 
-# Aplicare sortare
 if sort_by == "Valoare piață (Descrescător)":
     view = view.sort_values(by="Market Value", ascending=False)
-elif sort_by == "Profit / Pierdere (Descrescător)":
-    view = view.sort_values(by="Profit/Loss", ascending=False)
-elif sort_by == "Randament % (Descrescător)":
-    view = view.sort_values(by="Return %", ascending=False)
+elif sort_by == "Profit Total (Descrescător)":
+    view = view.sort_values(by="Total P/L", ascending=False)
+elif sort_by == "Dividende (Descrescător)":
+    view = view.sort_values(by="Dividends", ascending=False)
+elif sort_by == "Randament Total % (Descrescător)":
+    view = view.sort_values(by="Total Return %", ascending=False)
 else:
     view = view.sort_values(by="Ticker", ascending=True)
 
@@ -162,55 +177,78 @@ st.sidebar.info(
 # Metrici generale
 invested = view["Invested Value"].sum()
 market = view["Market Value"].sum()
-pnl = view["Profit/Loss"].sum()
-ret = pnl / invested * 100 if invested else 0
-total_shares = view["Shares"].sum()
+open_divs = view["Dividends"].sum()
+total_divs = open_divs + extra_closed_divs
+total_pnl = (market - invested) + total_divs
+total_ret = total_pnl / invested * 100 if invested else 0
 
-c1, c2, c3, c4, c5 = st.columns([1, 1, 1.3, 1.3, 1.3])
-c1.metric("Acțiuni / Unități", f"{total_shares:,.4g}")
-c2.metric("Poziții deschise", f"{len(view)}")
-c3.metric("Capital investit", f"{invested:,.2f} {target_currency}")
-c4.metric("Valoare piață", f"{market:,.2f} {target_currency}")
-c5.metric("Profit / Pierdere", f"{pnl:,.2f} {target_currency}", f"{ret:.2f}%")
+c1, c2, c3, c4, c5 = st.columns([0.8, 1.2, 1.2, 1.2, 1.4])
+c1.metric("Poziții", f"{len(view)}")
+c2.metric("Capital investit", f"{invested:,.2f} {target_currency}")
+c3.metric("Valoare piață", f"{market:,.2f} {target_currency}")
+c4.metric("Dividende nete", f"{total_divs:,.2f} {target_currency}", f"+{extra_closed_divs:,.2f} din închise" if extra_closed_divs > 0 else None)
+c5.metric("Profit Total (+Div.)", f"{total_pnl:,.2f} {target_currency}", f"{total_ret:.2f}%")
 
 st.subheader(f"Portofoliu (Valori convertite în {target_currency})")
-display_cols = [
-    "Ticker", "Company", "Sector", "Shares", "Buy Price", "Current Price", "Currency",
-    "Invested Value", "Market Value", "Weight %", "Profit/Loss", "Return %"
-]
 
-# Culori luminoase optimizate pentru fundal negru
-def color_profit_loss(row):
-    if row["Profit/Loss"] > 0:
-        return ["color: #00e676; font-weight: 500;"] * len(row)
-    elif row["Profit/Loss"] < 0:
-        return ["color: #ff5252; font-weight: 500;"] * len(row)
-    return ["color: #fafafa;"] * len(row)
+display_df = view[[
+    "Ticker", "Company", "Sector", "Shares", "Buy Price", "Current Price", "Currency",
+    "Invested Value", "Market Value", "Dividends", "Total P/L", "Total Return %", "Weight %"
+]].rename(columns={
+    "Ticker": "Simbol",
+    "Company": "Companie",
+    "Sector": "Sector",
+    "Shares": "Acțiuni",
+    "Buy Price": "Preț achiziție",
+    "Current Price": "Preț curent",
+    "Currency": "Monedă",
+    "Invested Value": "Valoare investită",
+    "Market Value": "Valoare piață",
+    "Dividends": "Dividende",
+    "Total P/L": "Profit / Pierdere",
+    "Total Return %": "Randament %",
+    "Weight %": "Pondere %"
+})
+
+def color_pnl_cols(val):
+    if val > 0:
+        return "color: #00e676; font-weight: bold;"
+    elif val < 0:
+        return "color: #ff5252; font-weight: bold;"
+    return "color: #fafafa;"
 
 styled_df = (
-    view[display_cols]
+    display_df
     .style
-    .apply(color_profit_loss, axis=1)
+    .map(color_pnl_cols, subset=["Profit / Pierdere", "Randament %"])
     .format({
-        "Shares": "{:,.4g}",
-        "Buy Price": "{:,.2f}",
-        "Current Price": "{:,.2f}",
-        "Invested Value": "{:,.2f}",
-        "Market Value": "{:,.2f}",
-        "Weight %": "{:.2f}%",
-        "Profit/Loss": "{:,.2f}",
-        "Return %": "{:.2f}%"
+        "Acțiuni": "{:,.4g}",
+        "Preț achiziție": "{:,.2f}",
+        "Preț curent": "{:,.2f}",
+        "Valoare investită": "{:,.2f}",
+        "Valoare piață": "{:,.2f}",
+        "Dividende": "{:,.2f}",
+        "Profit / Pierdere": "{:,.2f}",
+        "Randament %": "{:.2f}%",
+        "Pondere %": "{:.2f}%"
     })
 )
 
 st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
 # Grafice
-st.subheader(f"Profit / Pierdere per simbol ({target_currency})")
-if not view.empty:
-    pnl_chart_df = view.set_index("Ticker")[["Profit/Loss"]].copy()
-    pnl_chart_df["Color"] = np.where(pnl_chart_df["Profit/Loss"] >= 0, "#00e676", "#ff5252")
-    st.bar_chart(pnl_chart_df, y="Profit/Loss", color="Color")
+left_top, right_top = st.columns(2)
+with left_top:
+    st.subheader(f"Profit / Pierdere Total per simbol ({target_currency})")
+    if not view.empty:
+        pnl_chart_df = view.set_index("Ticker")[["Total P/L"]].copy()
+        pnl_chart_df["Color"] = np.where(pnl_chart_df["Total P/L"] >= 0, "#00e676", "#ff5252")
+        st.bar_chart(pnl_chart_df, y="Total P/L", color="Color")
+with right_top:
+    st.subheader(f"Dividende încasate per simbol ({target_currency})")
+    div_view = view[view["Dividends"] > 0].sort_values(by="Dividends", ascending=False)
+    if not div_view.empty:
+        st.bar_chart(div_view.set_index("Ticker")["Dividends"], color="#ffd54f")
 
 left, right = st.columns(2)
 with left:
@@ -225,19 +263,4 @@ with right:
 
 st.subheader("Editare poziții (în moneda originală)")
 edited = st.data_editor(view[required], num_rows="dynamic", use_container_width=True, key="portfolio_editor")
-if st.button("Save changes to portfolio.csv"):
-    if currency_filter == "Toate (Consolidat)":
-        updated_df = edited
-    else:
-        other_currencies = df[df["Currency"] != currency_filter][required]
-        updated_df = pd.concat([other_currencies, edited], ignore_index=True)
-    updated_df.to_csv(CSV_PATH, index=False)
-    st.cache_data.clear()
-    st.success("Salvat! Reîncarcă pagina pentru a recalcula.")
-
-st.download_button(
-    f"Descarcă portofoliul ({target_currency}) ca CSV",
-    view[display_cols].to_csv(index=False),
-    f"portfolio_{target_currency}.csv",
-    "text/csv"
-)
+if st.button("Salvează modificările în portfolio.csv"):
