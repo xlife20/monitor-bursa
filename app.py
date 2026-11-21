@@ -4,7 +4,7 @@ import numpy as np
 import yfinance as yf
 from pathlib import Path
 
-st.set_page_config(page_title="Monitor Investiții XTB", layout="wide")
+st.set_page_config(page_title="Monitor Investiții", layout="wide")
 
 CSV_PATH = Path(__file__).with_name("portfolio.csv")
 CLOSED_DIVS_EUR = 18.24
@@ -65,15 +65,15 @@ def c_rsi(v):
     if pd.isna(v): return ""
     return "color: #00e676; font-weight: bold;" if v <= 30 else ("color: #ff5252; font-weight: bold;" if v >= 70 else "")
 
-def render_portfolio(is_crypto):
+def render_portfolio(is_kraken):
     if st.button("⬅️ Înapoi la Meniul Principal"):
         st.switch_page(home_page)
-    st.title("🪙 Portofoliu Criptomonede" if is_crypto else "📈 Portofoliu Acțiuni & ETF-uri")
+    st.title("🪙 Portofoliu Kraken" if is_kraken else "📈 Portofoliu XTB")
     full_df = load_data()
     if "Dividends EUR" not in full_df.columns: full_df["Dividends EUR"] = 0.0
     req = ["Ticker", "Company", "Sector", "Shares", "Buy Price", "Current Price", "Currency", "Dividends EUR"]
-    crypto_mask = full_df["Sector"].astype(str).str.contains("Crypto", case=False, na=False) | full_df["Ticker"].astype(str).str.endswith("-USD")
-    df = full_df[crypto_mask].copy() if is_crypto else full_df[~crypto_mask].copy()
+    kraken_mask = full_df["Sector"].astype(str).str.contains("Kraken", case=False, na=False) | full_df["Ticker"].astype(str).str.endswith("-USD") | full_df["Ticker"].astype(str).str.endswith("-EUR")
+    df = full_df[kraken_mask].copy() if is_kraken else full_df[~kraken_mask].copy()
     if st.sidebar.button("🔄 Actualizează prețurile live"):
         st.cache_data.clear()
         st.rerun()
@@ -98,7 +98,7 @@ def render_portfolio(is_crypto):
     df["PnL"] = (df["Mkt"] - df["Inv"]) + df["Div"]
     df["Ret"] = np.where(df["Inv"] != 0, df["PnL"] / df["Inv"] * 100, 0)
     view = df.copy() if c_filt == "Toate (Consolidat)" else df[df["Currency"] == c_filt].copy()
-    extra_div = (CLOSED_DIVS_EUR * eur_rate) if (not is_crypto and c_filt == "Toate (Consolidat)") else 0.0
+    extra_div = (CLOSED_DIVS_EUR * eur_rate) if (not is_kraken and c_filt == "Toate (Consolidat)") else 0.0
     tot_mkt = view["Mkt"].sum()
     view["Wgt"] = np.where(tot_mkt != 0, view["Mkt"] / tot_mkt * 100, 0)
     s_map = dict([("Valoare piață", ("Mkt", False)), ("Profit Total", ("PnL", False)), ("Dividende", ("Div", False)), ("Randament %", ("Ret", False)), ("RSI (Crescător)", ("RSI", True)), ("vs SMA 200 %", ("SMA_Pct", True)), ("Tiker", ("Ticker", True))])
@@ -108,7 +108,7 @@ def render_portfolio(is_crypto):
     inv_s, mkt_s, div_s = view["Inv"].sum(), view["Mkt"].sum(), view["Div"].sum() + extra_div
     gross_profit = view[view["PnL"] > 0]["PnL"].sum() + extra_div
     gross_loss = view[view["PnL"] < 0]["PnL"].sum()
-    if is_crypto:
+    if is_kraken:
         c1, c2, c3, c5, c6 = st.columns(5)
         c1.metric("Poziții", f"{len(view)}")
         c2.metric("Capital investit", f"{inv_s:,.2f} {t_curr}")
@@ -122,9 +122,9 @@ def render_portfolio(is_crypto):
     c5.metric("Profit Total (Poz.)", f"+{gross_profit:,.2f} {t_curr}", f"{len(view[view['PnL'] > 0])} pe plus", delta_color="normal")
     c6.metric("Pierdere Totală (Neg.)", f"{gross_loss:,.2f} {t_curr}", f"-{len(view[view['PnL'] < 0])} pe minus", delta_color="normal")
     st.subheader(f"Portofoliu (Valori convertite în {t_curr})")
-    cols = ["Ticker", "Company", "Sector", "Shares", "Buy Price", "RSI", "SMA_Pct", "Current Price", "Currency", "Inv", "Mkt"] + ([] if is_crypto else ["Div"]) + ["PnL", "Ret", "Wgt"]
+    cols = ["Ticker", "Company", "Sector", "Shares", "Buy Price", "RSI", "SMA_Pct", "Current Price", "Currency", "Inv", "Mkt"] + ([] if is_kraken else ["Div"]) + ["PnL", "Ret", "Wgt"]
     disp = view[cols].copy()
-    disp.columns = ["Tiker", "Companie", "Sector", "Acțiuni", "Preț mediu", "RSI (14)", "vs SMA 200 %", "Preț curent", "Monedă", "Valoare investită", "Valoare piață"] + ([] if is_crypto else ["Dividende"]) + ["Profit / Pierdere", "Randament %", "Pondere %"]
+    disp.columns = ["Tiker", "Companie", "Sector", "Acțiuni", "Preț mediu", "RSI (14)", "vs SMA 200 %", "Preț curent", "Monedă", "Valoare investită", "Valoare piață"] + ([] if is_kraken else ["Dividende"]) + ["Profit / Pierdere", "Randament %", "Pondere %"]
     disp = disp.round(2)
     styler = disp.style.map(c_pnl, subset=["Profit / Pierdere", "Randament %", "vs SMA 200 %"]).map(c_rsi, subset=["RSI (14)"])
     st.dataframe(styler, use_container_width=True, hide_index=True, height=550, column_config=dict(Tiker=st.column_config.TextColumn("Tiker", pinned=True)))
@@ -137,29 +137,31 @@ def render_portfolio(is_crypto):
         st.subheader(f"Valoare de piață ({t_curr})")
         if not view.empty: st.bar_chart(view.set_index("Ticker")["Mkt"], color="#29b6f6")
     st.subheader("Editare poziții (în moneda originală)")
-    edited = st.data_editor(view[req], num_rows="dynamic", use_container_width=True, key=f"ed_{is_crypto}")
+    if is_kraken:
+        st.caption("Sfat: Pentru a adăuga monedele din Kraken, folosește simboluri precum BTC-USD, ETH-USD, SOL-USD, XRP-USD și scrie 'Kraken' la coloana Sector.")
+    edited = st.data_editor(view[req], num_rows="dynamic", use_container_width=True, key=f"ed_{is_kraken}")
     if st.button("Salvează modificările în portfolio.csv"):
-        other_part = full_df[~crypto_mask] if is_crypto else full_df[crypto_mask]
+        other_part = full_df[~kraken_mask] if is_kraken else full_df[kraken_mask]
         up = pd.concat([other_part[req], edited], ignore_index=True) if c_filt == "Toate (Consolidat)" else pd.concat([other_part[req], df[df["Currency"] != c_filt][req], edited], ignore_index=True)
         up.to_csv(CSV_PATH, index=False)
         st.cache_data.clear()
         st.success("Salvat! Reîncarcă pagina.")
 
 def page_home():
-    st.markdown("<br><br><br><h1 style='text-align: center;'>💼 Monitor Investiții XTB</h1><p style='text-align: center; color: #9e9e9e;'>Alege portofoliul pe care dorești să îl accesezi</p><br>", unsafe_allow_html=True)
+    st.markdown("<br><br><br><h1 style='text-align: center;'>💼 Monitor Investiții</h1><p style='text-align: center; color: #9e9e9e;'>Alege portofoliul pe care dorești să îl accesezi</p><br>", unsafe_allow_html=True)
     _, col1, col2, _ = st.columns(4)
-    if col1.button("📈 Portofoliu Acțiuni & ETF", use_container_width=True, type="primary"):
-        st.switch_page(stocks_page)
-    if col2.button("🪙 Portofoliu Criptomonede", use_container_width=True, type="primary"):
-        st.switch_page(crypto_page)
+    if col1.button("📈 Portofoliu XTB", use_container_width=True, type="primary"):
+        st.switch_page(xtb_page)
+    if col2.button("🪙 Portofoliu Kraken", use_container_width=True, type="primary"):
+        st.switch_page(kraken_page)
 
-def page_stocks():
+def page_xtb():
     render_portfolio(False)
 
-def page_crypto():
+def page_kraken():
     render_portfolio(True)
 
 home_page = st.Page(page_home, title="Meniu Principal", default=True)
-stocks_page = st.Page(page_stocks, title="Acțiuni & ETF")
-crypto_page = st.Page(page_crypto, title="Criptomonede")
-st.navigation([home_page, stocks_page, crypto_page], position="hidden").run()
+xtb_page = st.Page(page_xtb, title="Portofoliu XTB")
+kraken_page = st.Page(page_kraken, title="Portofoliu Kraken")
+st.navigation([home_page, xtb_page, kraken_page], position="hidden").run()
