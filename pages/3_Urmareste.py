@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 from pathlib import Path
-from utils import load_csv, save_csv_permanent, get_meta, fetch_data, c_pnl, c_rsi, f_price, f_rsi, f_sma, clean_table, quick_del
+from utils import load_csv, save_csv_permanent, get_meta, fetch_data, c_pnl, c_rsi, f_price, f_rsi, clean_table, quick_del
 
 st.set_page_config(page_title="Urmărește", layout="wide")
 CSV_PATH = Path(__file__).resolve().parent.parent / "watchlist.csv"
@@ -126,12 +126,29 @@ st.sidebar.info(f"Fișier: `{CSV_PATH.name}`\n\nSimboluri afișate: {len(view)}/
 def f_div_yield(v):
     return "" if (pd.isna(v) or v == "" or float(v) <= 0) else f"{float(v):.2f}%"
 
+def fmt_sma_combined(r):
+    if pd.isna(r["SMA200"]) or pd.isna(r["SMA_Pct"]):
+        return ""
+    p_str = f"{r['SMA200']:,.4f}" if abs(r["SMA200"]) < 2 else f"{r['SMA200']:,.2f}"
+    return f"{p_str} ({r['SMA_Pct']:+.2f}%)"
+
+def color_sma_combined(v):
+    if pd.isna(v) or str(v).strip() == "" or "(" not in str(v):
+        return ""
+    pct_part = str(v).split("(")[1].replace("%)", "").replace("+", "")
+    try:
+        num = float(pct_part)
+        return "color: #00e676; font-weight: bold;" if num > 0 else ("color: #ff5252; font-weight: bold;" if num < 0 else "")
+    except Exception:
+        return ""
+
 if not view.empty:
-    disp = view[["Ticker", "Company", "Currency", "Sector", "Avg_Price", "Current", "Div_Yield", "RSI", "SMA_Pct"]].copy()
-    disp.columns = ["Tiker", "Companie", "Monedă", "Sector", "Preț mediu", "Preț curent", "Divident AN%", "RSI (14)", "vs SMA 200 %"]
-    fmt = dict([("Preț mediu", f_price), ("Preț curent", f_price), ("Divident AN%", f_div_yield), ("RSI (14)", f_rsi), ("vs SMA 200 %", f_sma)])
+    view["SMA_Disp"] = view.apply(fmt_sma_combined, axis=1)
+    disp = view[["Ticker", "Company", "Currency", "Sector", "Avg_Price", "Current", "Div_Yield", "RSI", "SMA_Disp"]].copy()
+    disp.columns = ["Tiker", "Companie", "Monedă", "Sector", "Preț mediu", "Preț curent", "Divident AN%", "RSI (14)", "SMA 200"]
+    fmt = dict([("Preț mediu", f_price), ("Preț curent", f_price), ("Divident AN%", f_div_yield), ("RSI (14)", f_rsi)])
     disp_clean = clean_table(disp, fmt)
-    styler = disp_clean.style.map(c_pnl, subset=["vs SMA 200 %"]).map(c_rsi, subset=["RSI (14)"])
+    styler = disp_clean.style.map(color_sma_combined, subset=["SMA 200"]).map(c_rsi, subset=["RSI (14)"])
     st.dataframe(styler, use_container_width=True, hide_index=True, height=480, column_config=dict(Tiker=st.column_config.TextColumn("Tiker", pinned=True)))
 
 st.subheader("Editare listă (watchlist.csv)")
