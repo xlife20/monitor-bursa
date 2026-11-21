@@ -1,12 +1,30 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import yfinance as yf
 from pathlib import Path
-from utils import load_csv, get_meta, fetch_data, fetch_annual_dividends, c_pnl, c_rsi, f_price, f_rsi, f_sma, quick_del
+from utils import load_csv, get_meta, fetch_data, c_pnl, c_rsi, f_price, f_rsi, f_sma, quick_del
 
 st.set_page_config(page_title="Urmărește", layout="wide")
 CSV_PATH = Path(__file__).resolve().parent.parent / "watchlist.csv"
 XTB_CSV = Path(__file__).resolve().parent.parent / "portfolio.csv"
+
+@st.cache_data(ttl=3600)
+def get_div_yields(tickers):
+    res = dict()
+    uk = ["DGE.L", "BATS.L", "ABF.L"]
+    cutoff = pd.Timestamp.utcnow() - pd.Timedelta(days=365)
+    for t in tickers:
+        try:
+            divs = yf.Ticker(t).dividends
+            if divs is not None and not divs.empty:
+                recent = divs[divs.index >= cutoff]
+                if not recent.empty:
+                    sc = 0.01 if t in uk else 1.0
+                    res[t] = float(recent.sum()) * sc
+        except Exception:
+            pass
+    return res
 
 if st.button("⬅️ Meniu Principal"):
     st.switch_page("app.py")
@@ -62,7 +80,7 @@ quick_del(df, w_cols, CSV_PATH, "watch")
 tickers = df["Ticker"].dropna().unique().tolist()
 all_curr = sorted(df["Currency"].dropna().unique().tolist()) or ["EUR", "USD"]
 prices, _, rsi_m, sma_m, _ = fetch_data(tickers, ["EUR", "USD", "GBP"])
-ann_div_map = fetch_annual_dividends(tickers)
+ann_div_map = get_div_yields(tickers)
 
 df["Avg_Price"] = pd.to_numeric(df["Ticker"].map(avg_price_map), errors="coerce").astype(float)
 df["Current"] = pd.to_numeric(df["Ticker"].map(prices), errors="coerce").astype(float)
