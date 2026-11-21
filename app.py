@@ -73,12 +73,6 @@ st.markdown("""
         border-right: 1px solid #30363d;
     }
     .tbl-box tbody tr:hover td:first-child { background: #1c2128; }
-    div.stButton > button.home-btn {
-        height: 140px;
-        font-size: 1.4rem;
-        font-weight: bold;
-        border-radius: 14px;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -88,15 +82,9 @@ CLOSED_DIVS_EUR = 18.24
 if "page" not in st.session_state:
     st.session_state.page = "home"
 
-# ==========================================
-# PAGINA PRINCIPALA (DOAR CELE 2 BUTOANE)
-# ==========================================
 if st.session_state.page == "home":
-    st.markdown("<br><br><br>", unsafe_allow_html=True)
-    st.markdown("<h1 style='text-align: center;'>💼 Monitor Investiții XTB</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center; color: #9e9e9e; font-size: 1.1rem;'>Alege portofoliul pe care dorești să îl accesezi</p><br>", unsafe_allow_html=True)
-
-    _, col1, col2, _ = st.columns([1, 2, 2, 1])
+    st.markdown("<br><br><br><h1 style='text-align: center;'>💼 Monitor Investiții XTB</h1><p style='text-align: center; color: #9e9e9e; font-size: 1.1rem;'>Alege portofoliul pe care dorești să îl accesezi</p><br>", unsafe_allow_html=True)
+    _, col1, col2, _ = st.columns()
     with col1:
         if st.button("📈 Portofoliu Acțiuni & ETF", use_container_width=True, type="primary"):
             st.session_state.page = "stocks"
@@ -105,12 +93,8 @@ if st.session_state.page == "home":
         if st.button("🪙 Portofoliu Criptomonede", use_container_width=True, type="primary"):
             st.session_state.page = "crypto"
             st.rerun()
-
     st.stop()
 
-# ==========================================
-# FUNCTII DATE SI CALCULE
-# ==========================================
 @st.cache_data
 def load_data():
     return pd.read_csv(CSV_PATH)
@@ -159,7 +143,6 @@ def fetch_data(tickers, currencies):
         fx[c] = fx.get(c, fb.get(c, 1.0))
     return prices, rsi_m, sma_m, fx
 
-# Buton de întoarcere la pagina principală
 if st.sidebar.button("⬅️ Înapoi la Meniul Principal", use_container_width=True):
     st.session_state.page = "home"
     st.rerun()
@@ -177,7 +160,6 @@ full_df = load_data()
 if "Dividends EUR" not in full_df.columns: full_df["Dividends EUR"] = 0.0
 req = ["Ticker", "Company", "Sector", "Shares", "Buy Price", "Current Price", "Currency", "Dividends EUR"]
 
-# Filtrare automată în funcție de butonul apăsat pe pagina principală
 crypto_mask = full_df["Sector"].astype(str).str.contains("Crypto", case=False, na=False) | full_df["Ticker"].astype(str).str.endswith("-USD")
 df = full_df[crypto_mask].copy() if is_crypto_page else full_df[~crypto_mask].copy()
 
@@ -228,6 +210,9 @@ gross_profit = view[view["PnL"] > 0]["PnL"].sum() + extra_div
 gross_loss = view[view["PnL"] < 0]["PnL"].sum()
 net_pnl = gross_profit + gross_loss
 
+def card_html(label, val, color, sub):
+    return f"<div class='custom-card'><div class='custom-card-label'>{label}</div><div class='custom-card-val' style='color:{color};'>{val}</div><div class='custom-card-sub'>{sub}</div></div>"
+
 if is_crypto_page:
     c1, c2, c3, c5, c6 = st.columns([0.7, 1.2, 1.2, 1.2, 1.2])
     c1.metric("Poziții", f"{len(view)}")
@@ -241,15 +226,16 @@ else:
     c4.metric("Dividende nete", f"{div_s:,.2f} {t_curr}", f"+{extra_div:,.2f} închise" if extra_div > 0 else None)
 
 with c5:
-    st.markdown(
-        f"<div class='custom-card'>"
-        f"<div class='custom-card-label'>Profit Total (Poz.)</div>"
-        f"<div class='custom-card-val' style='color:#00e676;'>+{gross_profit:,.2f} {t_curr}</div>"
-        f"<div class='custom-card-sub'>Net: {net_pnl:+.2f} {t_curr}</div>"
-        f"</div>",
-        unsafe_allow_html=True
-    )
+    st.markdown(card_html("Profit Total (Poz.)", f"+{gross_profit:,.2f} {t_curr}", "#00e676", f"Net: {net_pnl:+.2f} {t_curr}"), unsafe_allow_html=True)
 
 with c6:
-    st.markdown(
-        f"<div class='custom-card'>"
+    st.markdown(card_html("Pierdere Totală (Neg.)", f"{gross_loss:,.2f} {t_curr}", "#ff5252", f"{len(view[view['PnL'] < 0])} poziții pe minus"), unsafe_allow_html=True)
+
+st.subheader(f"Portofoliu (Valori convertite în {t_curr})")
+
+t_df = pd.DataFrame()
+t_df["Tiker"] = "<b>" + view["Ticker"] + "</b>"
+t_df["Companie"] = view["Company"]
+t_df["Sector"] = view["Sector"]
+t_df["Acțiuni"] = view["Shares"].map(lambda x: f"{x:,.4g}")
+t_df["Preț mediu"] = view["Buy Price"].map(lambda x: f"{x:,.2f}")
