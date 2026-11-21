@@ -1,17 +1,35 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import yfinance as yf
 from pathlib import Path
 
 st.set_page_config(page_title="Portfolio Dashboard", layout="wide")
 st.title("📊 Stock Portfolio Dashboard")
-st.caption("Starter template — edit portfolio.csv with your own holdings. Example prices are illustrative, not live quotes.")
+st.caption("Live market prices powered by Yahoo Finance (fallback to CSV prices if unavailable).")
 
 CSV_PATH = Path(__file__).with_name("portfolio.csv")
 
 @st.cache_data
 def load_data():
     return pd.read_csv(CSV_PATH)
+
+@st.cache_data(ttl=300)
+def fetch_live_prices(tickers):
+    prices = {}
+    if not tickers:
+        return prices
+    try:
+        data = yf.download(tickers, period="5d", progress=False)["Close"]
+        if isinstance(data, pd.Series):
+            prices[tickers[0]] = float(data.dropna().iloc[-1])
+        else:
+            for t in tickers:
+                if t in data.columns and not data[t].dropna().empty:
+                    prices[t] = float(data[t].dropna().iloc[-1])
+    except Exception:
+        pass
+    return prices
 
 df = load_data()
 required = ["Ticker", "Company", "Sector", "Shares", "Buy Price", "Current Price", "Currency"]
@@ -20,17 +38,31 @@ for col in required:
         st.error(f"Missing column: {col}")
         st.stop()
 
+if st.sidebar.button("🔄 Refresh Live Prices"):
+    st.cache_data.clear()
+    st.rerun()
+
+tickers = df["Ticker"].dropna().unique().tolist()
+live_prices = fetch_live_prices(tickers)
+
 df["Shares"] = pd.to_numeric(df["Shares"], errors="coerce").fillna(0)
 df["Buy Price"] = pd.to_numeric(df["Buy Price"], errors="coerce").fillna(0)
 df["Current Price"] = pd.to_numeric(df["Current Price"], errors="coerce").fillna(0)
+
+# Actualizare cu preturile live acolo unde sunt disponibile
+df["Live Price"] = df["Ticker"].map(live_prices)
+df["Current Price"] = np.where(df["Live Price"].notna(), df["Live Price"], df["Current Price"])
+
 df["Invested Value"] = df["Shares"] * df["Buy Price"]
 df["Market Value"] = df["Shares"] * df["Current Price"]
 df["Profit/Loss"] = df["Market Value"] - df["Invested Value"]
 df["Return %"] = np.where(df["Invested Value"] != 0, df["Profit/Loss"] / df["Invested Value"] * 100, 0)
 
-currency = st.sidebar.selectbox("Currency displayed", sorted(df["Currency"].dropna().unique().tolist()) or ["USD"])
+currencies = sorted(df["Currency"].dropna().unique().tolist()) or ["USD"]
+currency = st.sidebar.selectbox("Currency displayed", currencies)
 view = df[df["Currency"] == currency].copy()
-st.sidebar.info("Prices in this template are manual/example values. Replace them in portfolio.csv or connect a market-data provider.")
+
+st.sidebar.info(f"Prețuri live preluate pentru {len(live_prices)} din {len(tickers)} simboluri.")
 
 invested = view["Invested Value"].sum()
 market = view["Market Value"].sum()
@@ -68,10 +100,10 @@ with right:
 st.subheader("Edit holdings")
 edited = st.data_editor(view[required], num_rows="dynamic", use_container_width=True, key="portfolio_editor")
 if st.button("Save changes to portfolio.csv"):
-    # Preserve the displayed currency-filtered portfolio as the saved file.
-    edited.to_csv(CSV_PATH, index=False)
+    other_currencies = df[df["Currency"] != currency][required]
+    updated_df = pd.concat([other_currencies, edited], ignore_index=True)
+    updated_df.to_csv(CSV_PATH, index=False)
     st.cache_data.clear()
     st.success("Saved. Refresh the page to recalculate metrics.")
 
 st.download_button("Download displayed holdings as CSV", view[display_cols].to_csv(index=False), "portfolio_export.csv", "text/csv")
-st.caption("For accurate live valuation, use a market-data API and account for exchange, currency, fees, dividends, and split adjustments.")
