@@ -22,7 +22,7 @@ st.markdown("""
         align-items: center;
     }
     .summary-label { font-size: 0.95rem; color: #9e9e9e; margin-bottom: 8px; }
-    .summary-val { font-size: 1.85rem; font-weight: 700; line-height: 1.2; }
+    .summary-val { font-size: 1.75rem; font-weight: 700; line-height: 1.2; }
     .summary-sub { font-size: 0.85rem; margin-top: 8px; color: #9e9e9e; }
 </style>
 """, unsafe_allow_html=True)
@@ -53,22 +53,24 @@ mult_to_eur = pd.to_numeric(df_all["Currency"].map(fx), errors="coerce").fillna(
 
 inv_eur = float((df_all["Shares"] * df_all["Buy Price"] * mult_to_eur).sum())
 mkt_eur = float((df_all["Shares"] * df_all["Current Price"] * mult_to_eur).sum())
-divs_eur = float(df_all["Dividends EUR"].sum()) + CLOSED_DIVS_EUR
-pnl_eur = (mkt_eur - inv_eur) + divs_eur
-ret_pct = (pnl_eur / inv_eur * 100) if inv_eur > 0 else 0.0
+open_divs_eur = float(df_all["Dividends EUR"].sum())
+total_divs_eur = open_divs_eur + CLOSED_DIVS_EUR
 
-pnl_color = "#00e676" if pnl_eur >= 0 else "#ff5252"
-pnl_sign = "+" if pnl_eur >= 0 else ""
+price_pnl_eur = mkt_eur - inv_eur
+price_ret_pct = (price_pnl_eur / inv_eur * 100) if inv_eur > 0 else 0.0
+
+pnl_color = "#00e676" if price_pnl_eur >= 0 else "#ff5252"
+pnl_sign = "+" if price_pnl_eur >= 0 else ""
 
 st.markdown("<br><h1 style='text-align: center;'>💼 Investiții</h1><br>", unsafe_allow_html=True)
 
-_, col_s1, col_s2, _ = st.columns([1.1, 1.6, 1.6, 1.1])
+_, col_s1, col_s2, col_s3, _ = st.columns([0.6, 1.4, 1.4, 1.4, 0.6])
 with col_s1:
     st.markdown(
         f"<div class='summary-card'>"
         f"<div class='summary-label'>Total Investit (XTB + Kraken)</div>"
         f"<div class='summary-val' style='color:#fafafa;'>{inv_eur:,.2f} EUR</div>"
-        f"<div class='summary-sub'>Valoare piață actuală: {mkt_eur:,.2f} EUR</div>"
+        f"<div class='summary-sub'>Valoare piață: {mkt_eur:,.2f} EUR</div>"
         f"</div>",
         unsafe_allow_html=True
     )
@@ -76,16 +78,26 @@ with col_s1:
 with col_s2:
     st.markdown(
         f"<div class='summary-card'>"
-        f"<div class='summary-label'>Profit / Pierdere Total (+Dividende)</div>"
-        f"<div class='summary-val' style='color:{pnl_color};'>{pnl_sign}{pnl_eur:,.2f} EUR</div>"
-        f"<div class='summary-sub'>Randament total: {pnl_sign}{ret_pct:.2f}% (incl. {divs_eur:,.2f} EUR div.)</div>"
+        f"<div class='summary-label'>Profit / Pierdere (Preț)</div>"
+        f"<div class='summary-val' style='color:{pnl_color};'>{pnl_sign}{price_pnl_eur:,.2f} EUR</div>"
+        f"<div class='summary-sub'>Randament preț: {pnl_sign}{price_ret_pct:.2f}%</div>"
+        f"</div>",
+        unsafe_allow_html=True
+    )
+
+with col_s3:
+    st.markdown(
+        f"<div class='summary-card'>"
+        f"<div class='summary-label'>Dividende Nete</div>"
+        f"<div class='summary-val' style='color:#ffd54f;'>+{total_divs_eur:,.2f} EUR</div>"
+        f"<div class='summary-sub'>Deschise: {open_divs_eur:,.2f} | Închise: {CLOSED_DIVS_EUR:,.2f}</div>"
         f"</div>",
         unsafe_allow_html=True
     )
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-_, c1, c2, c3, _ = st.columns([1.0, 1.2, 1.2, 1.2, 1.0])
+_, c1, c2, c3, _ = st.columns([0.6, 1.4, 1.4, 1.4, 0.6])
 if c1.button("📈 Portofoliu XTB", use_container_width=True, type="primary"):
     st.switch_page("pages/1_Portofoliu_XTB.py")
 if c2.button("🪙 Portofoliu Kraken", use_container_width=True, type="primary"):
