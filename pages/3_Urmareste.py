@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 from pathlib import Path
-from utils import load_csv, get_meta, fetch_data, c_pnl, c_rsi, f_price, f_rsi, f_sma, clean_table, quick_del
+from utils import load_csv, save_csv_permanent, get_meta, fetch_data, c_pnl, c_rsi, f_price, f_rsi, f_sma, clean_table, quick_del
 
 st.set_page_config(page_title="Urmărește", layout="wide")
 CSV_PATH = Path(__file__).resolve().parent.parent / "watchlist.csv"
@@ -60,19 +60,6 @@ if not xtb_df.empty and "Buy Price" in xtb_df.columns:
     xtb_df["Buy Price"] = pd.to_numeric(xtb_df["Buy Price"], errors="coerce")
     avg_price_map = xtb_df.dropna(subset=["Ticker", "Buy Price"]).set_index("Ticker")["Buy Price"].to_dict()
 
-col_imp, _ = st.columns([1.4, 2.6])
-with col_imp:
-    if st.button("📥 Importă companiile din Portofoliu XTB", use_container_width=True):
-        if not xtb_df.empty:
-            ex = set(df["Ticker"].astype(str).str.upper().tolist())
-            new_from_xtb = xtb_df[~xtb_df["Ticker"].astype(str).str.upper().isin(ex)][w_cols]
-            if not new_from_xtb.empty:
-                pd.concat([df[w_cols], new_from_xtb], ignore_index=True).to_csv(CSV_PATH, index=False)
-                st.cache_data.clear()
-                st.rerun()
-            else:
-                st.info("Toate companiile din XTB sunt deja în listă.")
-
 with st.expander("➕ Adaugă rapid mai multe tikere odată", expanded=False):
     raw = st.text_area("Introdu simbolurile separate prin virgulă sau spațiu:", placeholder="Ex: TSLA, KO, O, NVDA, NKE, BTC-EUR", height=70)
     if st.button("Adaugă în listă", type="primary"):
@@ -85,7 +72,7 @@ with st.expander("➕ Adaugă rapid mai multe tikere odată", expanded=False):
                 comp, sec, curr = get_meta(t)
                 rows.append(dict(Ticker=t, Company=comp, Currency=curr, Sector=sec))
             add_df = pd.DataFrame(rows)
-            pd.concat([df[w_cols], add_df], ignore_index=True).to_csv(CSV_PATH, index=False)
+            save_csv_permanent(pd.concat([df[w_cols], add_df], ignore_index=True), CSV_PATH)
             st.cache_data.clear()
             st.rerun()
 
@@ -151,6 +138,6 @@ st.subheader("Editare listă (watchlist.csv)")
 edited = st.data_editor(view[w_cols], num_rows="dynamic", use_container_width=True, key="ed_watch")
 if st.button("Salvează modificările în watchlist.csv"):
     up = edited if c_filt == "Toate" else pd.concat([df[df["Currency"] != c_filt][w_cols], edited], ignore_index=True)
-    up.to_csv(CSV_PATH, index=False)
+    ok = save_csv_permanent(up, CSV_PATH)
     st.cache_data.clear()
-    st.success("Salvat!")
+    st.success("Salvat permanent pe GitHub!" if ok else "Salvat local!")
