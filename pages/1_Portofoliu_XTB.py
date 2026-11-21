@@ -22,10 +22,10 @@ def parse_xtb_report(uploaded_file, old_df):
                 in_cash = False
                 continue
             parts = [p.strip() for p in line.split(",")]
-            if len(parts) >= 6 and parts in ("Dividend", "Withholding tax") and parts:
-                tk = parts.replace(".US", "").replace(".UK", ".L").replace(".ES", ".MC").replace(".IT", ".MI")
+            if len(parts) >= 6 and parts[0] in ("Dividend", "Withholding tax") and parts[2]:
+                tk = parts[2].replace(".US", "").replace(".UK", ".L").replace(".ES", ".MC").replace(".IT", ".MI")
                 try:
-                    divs_eur[tk] = divs_eur.get(tk, 0.0) + float(parts)
+                    divs_eur[tk] = divs_eur.get(tk, 0.0) + float(parts[5])
                 except ValueError:
                     pass
 
@@ -37,16 +37,21 @@ def parse_xtb_report(uploaded_file, old_df):
             continue
         if in_open:
             parts = [p.strip() for p in line.split(",")]
-            if len(parts) >= 9 and parts in ("My Trades", "Investment Plan") and parts != "":
-                raw_tk = parts
+            if len(parts) >= 9 and parts[0] in ("My Trades", "Investment Plan") and parts[3] != "":
+                raw_tk = parts[2]
                 tk = raw_tk.replace(".US", "").replace(".UK", ".L").replace(".ES", ".MC").replace(".IT", ".MI")
                 if "CVR" in tk or "US931" in tk:
                     continue
-                vol = float(parts)
-                buy_p = float(parts)
+                try:
+                    vol = float(parts[5])
+                    buy_p = float(parts[8])
+                except ValueError:
+                    continue
                 match = old_df[old_df["Ticker"] == tk]
                 if not match.empty:
-                    comp, sec, curr = match.iloc["Company"], match.iloc["Sector"], match.iloc["Currency"]
+                    comp = match.iloc[0]["Company"]
+                    sec = match.iloc[0]["Sector"]
+                    curr = match.iloc[0]["Currency"]
                 else:
                     comp, sec, curr = get_meta(tk)
                     if raw_tk.endswith(".UK"):
@@ -65,9 +70,14 @@ def parse_xtb_report(uploaded_file, old_df):
         tot_sh = grp["Shares"].sum()
         avg_b = (grp["Shares"] * grp["Buy Price"]).sum() / tot_sh if tot_sh > 0 else 0.0
         grouped.append({
-            "Ticker": tk, "Company": grp.iloc["Company"], "Sector": grp.iloc["Sector"],
-            "Shares": round(tot_sh, 6), "Buy Price": round(avg_b, 4), "Current Price": round(avg_b, 4),
-            "Currency": grp.iloc["Currency"], "Dividends EUR": grp.iloc["Dividends EUR"]
+            "Ticker": tk,
+            "Company": grp.iloc[0]["Company"],
+            "Sector": grp.iloc[0]["Sector"],
+            "Shares": round(tot_sh, 6),
+            "Buy Price": round(avg_b, 4),
+            "Current Price": round(avg_b, 4),
+            "Currency": grp.iloc[0]["Currency"],
+            "Dividends EUR": grp.iloc[0]["Dividends EUR"]
         })
     return pd.DataFrame(grouped)
 
@@ -178,5 +188,3 @@ if not view.empty:
     disp = view[cols].copy()
     disp.columns = ["Tiker", "Companie", "Sector", "Acțiuni", "Preț mediu", "RSI (14)", "vs SMA 200 %", "Preț curent", "Monedă", "Valoare investită", "Valoare piață", "Dividende", "Dividende / an (Est.)", "Dividend %", "YoC %", "Profit / Pierdere", "Randament %", "Pondere %"]
     fmt = dict([("Acțiuni", f_shares), ("Preț mediu", f_price), ("RSI (14)", f_rsi), ("vs SMA 200 %", f_sma), ("Preț curent", f_price), ("Valoare investită", f_num2), ("Valoare piață", f_num2), ("Dividende", f_num2), ("Dividende / an (Est.)", f_num2), ("Dividend %", f_yoc), ("YoC %", f_yoc), ("Profit / Pierdere", f_num2), ("Randament %", f_pct), ("Pondere %", f_pct)])
-    disp_clean = clean_table(disp, fmt)
-    styler = disp_clean.style.map(c_pnl, subset=["Profit / Pierdere", "Randament %", "vs SMA 200 %"]).map(c_rsi, subset=["RSI (14)"])
