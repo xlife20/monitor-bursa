@@ -17,11 +17,44 @@ st.markdown("""
     div[data-testid="stMetricValue"] {
         font-size: 1.55rem !important;
     }
+    .table-container {
+        max-height: 560px;
+        overflow-y: auto;
+        overflow-x: auto;
+        border: 1px solid #30363d;
+        border-radius: 8px;
+        background-color: #0e1117;
+    }
+    .table-container table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+        color: #fafafa;
+    }
+    .table-container thead th {
+        position: sticky;
+        top: 0;
+        background-color: #161b22;
+        color: #fafafa;
+        z-index: 2;
+        padding: 10px 8px;
+        text-align: left;
+        border-bottom: 2px solid #30363d;
+        white-space: nowrap;
+    }
+    .table-container tbody td {
+        padding: 8px;
+        border-bottom: 1px solid #21262d;
+        white-space: nowrap;
+    }
+    .table-container tbody tr:hover {
+        background-color: #1c2128;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 st.title("📊 Panou de Control Portofoliu")
-st.caption("Prețuri, indicatori tehnici (RSI 14, SMA 200), cursuri valutare live și dividende nete încasate din XTB.")
+st.caption("Prețuri, indicatori tehnici (RSI 14, vs SMA 200 %), cursuri valutare live și dividende nete încasate din XTB.")
 
 CSV_PATH = Path(__file__).with_name("portfolio.csv")
 CLOSED_POSITIONS_DIVIDENDS_EUR = 18.24
@@ -134,6 +167,7 @@ df["Live Price"] = df["Ticker"].map(live_prices)
 df["Current Price"] = np.where(df["Live Price"].notna(), df["Live Price"], df["Current Price"])
 df["RSI"] = df["Ticker"].map(rsi_map)
 df["SMA200"] = df["Ticker"].map(sma200_map)
+df["SMA200_Pct"] = np.where(df["SMA200"].notna() & (df["SMA200"] != 0), (df["Current Price"] - df["SMA200"]) / df["SMA200"] * 100, np.nan)
 
 st.sidebar.header("Setări afișare")
 target_currency = st.sidebar.selectbox("Monedă raportare (Total)", ["EUR", "USD", "GBP"])
@@ -147,6 +181,7 @@ sort_by = st.sidebar.selectbox(
         "Dividende (Descrescător)",
         "Randament Total % (Descrescător)",
         "RSI (Crescător - Supravândute)",
+        "vs SMA 200 % (Crescător)",
         "Simbol (A-Z)"
     ]
 )
@@ -183,6 +218,8 @@ elif sort_by == "Randament Total % (Descrescător)":
     view = view.sort_values(by="Total Return %", ascending=False)
 elif sort_by == "RSI (Crescător - Supravândute)":
     view = view.sort_values(by="RSI", ascending=True, na_position="last")
+elif sort_by == "vs SMA 200 % (Crescător)":
+    view = view.sort_values(by="SMA200_Pct", ascending=True, na_position="last")
 else:
     view = view.sort_values(by="Ticker", ascending=True)
 
@@ -212,7 +249,7 @@ c5.metric("Profit Total (+Div.)", f"{total_pnl:,.2f} {target_currency}", f"{tota
 st.subheader(f"Portofoliu (Valori convertite în {target_currency})")
 
 display_df = view[[
-    "Ticker", "Company", "Sector", "Shares", "Buy Price", "RSI", "SMA200", "Current Price", "Currency",
+    "Ticker", "Company", "Sector", "Shares", "Buy Price", "RSI", "SMA200_Pct", "Current Price", "Currency",
     "Invested Value", "Market Value", "Dividends", "Total P/L", "Total Return %", "Weight %"
 ]].rename(columns={
     "Ticker": "Simbol",
@@ -221,39 +258,10 @@ display_df = view[[
     "Shares": "Acțiuni",
     "Buy Price": "Preț mediu",
     "RSI": "RSI (14)",
-    "SMA200": "SMA 200",
+    "SMA200_Pct": "vs SMA 200 %",
     "Current Price": "Preț curent",
     "Currency": "Monedă",
     "Invested Value": "Valoare investită",
     "Market Value": "Valoare piață",
     "Dividends": "Dividende",
     "Total P/L": "Profit / Pierdere",
-    "Total Return %": "Randament %",
-    "Weight %": "Pondere %"
-}).round({
-    "Acțiuni": 4,
-    "Preț mediu": 2,
-    "RSI (14)": 1,
-    "SMA 200": 2,
-    "Preț curent": 2,
-    "Valoare investită": 2,
-    "Valoare piață": 2,
-    "Dividende": 2,
-    "Profit / Pierdere": 2,
-    "Randament %": 2,
-    "Pondere %": 2
-})
-
-def color_pnl(val):
-    return "color: #00e676; font-weight: bold;" if pd.notna(val) and val > 0 else ("color: #ff5252; font-weight: bold;" if pd.notna(val) and val < 0 else "color: #fafafa;")
-
-def color_rsi(val):
-    return "color: #00e676; font-weight: bold;" if pd.notna(val) and val <= 30 else ("color: #ff5252; font-weight: bold;" if pd.notna(val) and val >= 70 else "color: #fafafa;")
-
-def color_sma(col):
-    return np.where(display_df["SMA 200"].isna(), "color: #9e9e9e;", np.where(display_df["Preț curent"] > display_df["SMA 200"], "color: #00e676; font-weight: bold;", "color: #ff5252; font-weight: bold;"))
-
-styler = display_df.style.map(color_pnl, subset=["Profit / Pierdere", "Randament %"]).map(color_rsi, subset=["RSI (14)"]).apply(color_sma, subset=["SMA 200"])
-
-st.dataframe(styler, use_container_width=True, hide_index=True, height=600)
-
