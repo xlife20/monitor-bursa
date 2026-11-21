@@ -28,26 +28,23 @@ st.markdown("""
     .tbl-wrap {
         width: 100%;
         max-height: 550px;
-        overflow-x: scroll;
-        overflow-y: scroll;
+        overflow: auto;
         border: 1px solid #30363d;
         border-radius: 8px;
         background-color: #0e1117;
-        display: block;
     }
     .tbl-wrap table {
         width: 100%;
         border-collapse: collapse;
         font-size: 14px;
         color: #fafafa;
-        background-color: #0e1117;
     }
     .tbl-wrap th {
         position: sticky;
         top: 0;
         background-color: #161b22;
         color: #fafafa;
-        z-index: 3;
+        z-index: 2;
         padding: 10px 8px;
         text-align: left;
         border-bottom: 2px solid #30363d;
@@ -57,16 +54,8 @@ st.markdown("""
         padding: 8px;
         border-bottom: 1px solid #21262d;
         white-space: nowrap;
-        background-color: #0e1117;
     }
-    .tbl-wrap th:first-child, .tbl-wrap td:first-child {
-        position: sticky;
-        left: 0;
-        background-color: #161b22;
-        border-right: 1px solid #30363d;
-    }
-    .tbl-wrap th:first-child { z-index: 5; }
-    .tbl-wrap td:first-child { z-index: 2; }
+    .tbl-wrap tr:hover td { background-color: #1c2128; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -236,3 +225,8 @@ t_df["Sector"] = view["Sector"]
 t_df["Acțiuni"] = view["Shares"].map(lambda x: f"{x:,.4g}")
 t_df["Preț mediu"] = view["Buy Price"].map(lambda x: f"{x:,.2f}")
 t_df["RSI (14)"] = view["RSI"].map(lambda x: "-" if pd.isna(x) else f"<span style='color:{'#00e676' if x<=30 else ('#ff5252' if x>=70 else '#fafafa')};font-weight:bold'>{x:.1f}</span>")
+t_df["vs SMA 200 %"] = view["SMA_Pct"].map(lambda x: "-" if pd.isna(x) else f"<span style='color:{'#00e676' if x>0 else '#ff5252'};font-weight:bold'>{x:+.2f}%</span>")
+t_df["Preț curent"] = view["Current Price"].map(lambda x: f"{x:,.2f}")
+t_df["Monedă"] = view["Currency"]
+t_df["Valoare investită"] = view["Inv"].map(lambda x: f"{x:,.2f}")
+t_df["Valoare piață"] = view["Mkt"].map(lambda x: f"{x:,.2f}")
