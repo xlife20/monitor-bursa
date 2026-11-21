@@ -69,6 +69,23 @@ def fetch_data(tickers, currencies):
         fx[c] = fx.get(c, fb.get(c, 1.0))
     return prices, prev_p, rsi_m, sma_m, fx
 
+@st.cache_data(ttl=3600)
+def fetch_annual_dividends(tickers):
+    div_rate = dict()
+    uk = ["DGE.L", "BATS.L", "ABF.L"]
+    cutoff = pd.Timestamp.utcnow() - pd.Timedelta(days=365)
+    for t in tickers:
+        try:
+            divs = yf.Ticker(t).dividends
+            if divs is not None and not divs.empty:
+                recent = divs[divs.index >= cutoff]
+                if not recent.empty:
+                    sc = 0.01 if t in uk else 1.0
+                    div_rate[t] = float(recent.sum()) * sc
+        except Exception:
+            pass
+    return div_rate
+
 def c_pnl(v):
     if pd.isna(v): return ""
     return "color: #00e676; font-weight: bold;" if v > 0 else ("color: #ff5252; font-weight: bold;" if v < 0 else "")
@@ -90,7 +107,7 @@ def f_shares(v):
     return s if s else "0"
 
 def f_num2(v): return "-" if pd.isna(v) else f"{v:,.2f}"
-def f_rsi(v): return "-" if pd.isna(v) else f"{v:.1f}"
+def f_rsi(v): return "-" if pd.isna(v) else f"{v:.1f}%"
 def f_sma(v): return "-" if pd.isna(v) else f"{v:+.2f}%"
 def f_pct(v): return "-" if pd.isna(v) else f"{v:.2f}%"
 
