@@ -29,7 +29,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("📊 Panou de Control Portofoliu")
-st.caption("Prețuri, cursuri valutare live (Yahoo Finance) și dividende nete încasate din XTB.")
+st.caption("Prețuri, indicatori tehnici (RSI 14, SMA 200), cursuri valutare live și dividende nete încasate din XTB.")
 
 CSV_PATH = Path(__file__).with_name("portfolio.csv")
 
@@ -40,29 +40,59 @@ CLOSED_POSITIONS_DIVIDENDS_EUR = 18.24
 def load_data():
     return pd.read_csv(CSV_PATH)
 
+def compute_rsi(series, period=14):
+    s = series.dropna()
+    if len(s) < period + 1:
+        return np.nan
+    delta = s.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    avg_gain = gain.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    return float(rsi.iloc[-1])
+
+def compute_sma200(series, scale=1.0):
+    s = series.dropna()
+    if len(s) < 200:
+        return np.nan
+    return float(s.iloc[-200:].mean()) * scale
+
 @st.cache_data(ttl=300)
 def fetch_live_market_data(tickers, currencies):
     prices = {}
+    rsi_map = {}
+    sma200_map = {}
     fx_rates = {"USD": 1.0}
 
     uk_pence_tickers = {"DGE.L", "BATS.L", "ABF.L"}
 
+    # 1. Prețuri acțiuni și istoric pe 1 an pentru RSI (14) și SMA 200
     if tickers:
         try:
-            data = yf.download(tickers, period="5d", progress=False)["Close"]
+            data = yf.download(tickers, period="1y", progress=False)["Close"]
             if isinstance(data, pd.Series):
                 t = tickers[0] if isinstance(tickers, list) else tickers
-                if not data.dropna().empty:
-                    val = float(data.dropna().iloc[-1])
-                    prices[t] = val / 100.0 if t in uk_pence_tickers else val
+                s = data.dropna()
+                if not s.empty:
+                    scale = 0.01 if t in uk_pence_tickers else 1.0
+                    prices[t] = float(s.iloc[-1]) * scale
+                    rsi_map[t] = compute_rsi(s)
+                    sma200_map[t] = compute_sma200(s, scale)
             else:
                 for t in tickers:
-                    if t in data.columns and not data[t].dropna().empty:
-                        val = float(data[t].dropna().iloc[-1])
-                        prices[t] = val / 100.0 if t in uk_pence_tickers else val
+                    if t in data.columns:
+                        s = data[t].dropna()
+                        if not s.empty:
+                            scale = 0.01 if t in uk_pence_tickers else 1.0
+                            prices[t] = float(s.iloc[-1]) * scale
+                            rsi_map[t] = compute_rsi(s)
+                            sma200_map[t] = compute_sma200(s, scale)
         except Exception:
             pass
 
+    # 2. Cursuri valutare live față de USD
     other_curr = [c for c in currencies if c != "USD"]
     fx_tickers = [f"{c}USD=X" for c in other_curr]
     fallback_to_usd = {"EUR": 1.08, "GBP": 1.27, "RON": 0.22}
@@ -86,7 +116,7 @@ def fetch_live_market_data(tickers, currencies):
         if c not in fx_rates:
             fx_rates[c] = fallback_to_usd.get(c, 1.0)
 
-    return prices, fx_rates
+    return prices, rsi_map, sma200_map, fx_rates
 
 df = load_data()
 if "Dividends EUR" not in df.columns:
@@ -104,16 +134,20 @@ if st.sidebar.button("🔄 Actualizează prețurile live"):
 
 tickers = df["Ticker"].dropna().unique().tolist()
 all_currencies = sorted(df["Currency"].dropna().unique().tolist()) or ["EUR", "USD"]
-live_prices, fx_to_usd = fetch_live_market_data(tickers, list(set(all_currencies + ["EUR", "USD", "GBP"])))
+live_prices, rsi_map, sma200_map, fx_to_usd = fetch_live_market_data(
+    tickers, list(set(all_currencies + ["EUR", "USD", "GBP"]))
+)
 
 df["Shares"] = pd.to_numeric(df["Shares"], errors="coerce").fillna(0)
 df["Buy Price"] = pd.to_numeric(df["Buy Price"], errors="coerce").fillna(0)
 df["Current Price"] = pd.to_numeric(df["Current Price"], errors="coerce").fillna(0)
 df["Dividends EUR"] = pd.to_numeric(df["Dividends EUR"], errors="coerce").fillna(0)
 
-# Actualizare prețuri live
+# Actualizare prețuri live și indicatori tehnici
 df["Live Price"] = df["Ticker"].map(live_prices)
 df["Current Price"] = np.where(df["Live Price"].notna(), df["Live Price"], df["Current Price"])
+df["RSI"] = df["Ticker"].map(rsi_map)
+df["SMA200"] = df["Ticker"].map(sma200_map)
 
 # Filtre și sortare în bara laterală
 st.sidebar.header("Setări afișare")
@@ -127,6 +161,7 @@ sort_by = st.sidebar.selectbox(
         "Profit Total (Descrescător)",
         "Dividende (Descrescător)",
         "Randament Total % (Descrescător)",
+        "RSI (Crescător - Supravândute)",
         "Simbol (A-Z)"
     ]
 )
@@ -162,6 +197,8 @@ elif sort_by == "Dividende (Descrescător)":
     view = view.sort_values(by="Dividends", ascending=False)
 elif sort_by == "Randament Total % (Descrescător)":
     view = view.sort_values(by="Total Return %", ascending=False)
+elif sort_by == "RSI (Crescător - Supravândute)":
+    view = view.sort_values(by="RSI", ascending=True, na_position="last")
 else:
     view = view.sort_values(by="Ticker", ascending=True)
 
@@ -192,7 +229,7 @@ c5.metric("Profit Total (+Div.)", f"{total_pnl:,.2f} {target_currency}", f"{tota
 st.subheader(f"Portofoliu (Valori convertite în {target_currency})")
 
 display_df = view[[
-    "Ticker", "Company", "Sector", "Shares", "Buy Price", "Current Price", "Currency",
+    "Ticker", "Company", "Sector", "Shares", "Buy Price", "RSI", "SMA200", "Current Price", "Currency",
     "Invested Value", "Market Value", "Dividends", "Total P/L", "Total Return %", "Weight %"
 ]].rename(columns={
     "Ticker": "Simbol",
@@ -200,6 +237,8 @@ display_df = view[[
     "Sector": "Sector",
     "Shares": "Acțiuni",
     "Buy Price": "Preț mediu",
+    "RSI": "RSI (14)",
+    "SMA200": "SMA 200",
     "Current Price": "Preț curent",
     "Currency": "Monedă",
     "Invested Value": "Valoare investită",
@@ -211,55 +250,23 @@ display_df = view[[
 })
 
 def color_pnl_cols(val):
+    if pd.isna(val):
+        return "color: #fafafa;"
     if val > 0:
         return "color: #00e676; font-weight: bold;"
     elif val < 0:
         return "color: #ff5252; font-weight: bold;"
     return "color: #fafafa;"
 
+def color_rsi_col(val):
+    if pd.isna(val):
+        return "color: #9e9e9e;"
+    if val <= 30:
+        return "color: #00e676; font-weight: bold;"
+    elif val >= 70:
+        return "color: #ff5252; font-weight: bold;"
+    return "color: #fafafa;"
+
 styled_df = (
     display_df
     .style
-    .map(color_pnl_cols, subset=["Profit / Pierdere", "Randament %"])
-    .format({
-        "Acțiuni": "{:,.4g}",
-        "Preț mediu": "{:,.2f}",
-        "Preț curent": "{:,.2f}",
-        "Valoare investită": "{:,.2f}",
-        "Valoare piață": "{:,.2f}",
-        "Dividende": "{:,.2f}",
-        "Profit / Pierdere": "{:,.2f}",
-        "Randament %": "{:.2f}%",
-        "Pondere %": "{:.2f}%"
-    })
-)
-
-st.dataframe(styled_df, use_container_width=True, hide_index=True)
-
-# Grafice
-left_top, right_top = st.columns(2)
-with left_top:
-    st.subheader(f"Profit / Pierdere Total per simbol ({target_currency})")
-    if not view.empty:
-        pnl_chart_df = view.set_index("Ticker")[["Total P/L"]].copy()
-        pnl_chart_df["Color"] = np.where(pnl_chart_df["Total P/L"] >= 0, "#00e676", "#ff5252")
-        st.bar_chart(pnl_chart_df, y="Total P/L", color="Color")
-with right_top:
-    st.subheader(f"Dividende încasate per simbol ({target_currency})")
-    div_view = view[view["Dividends"] > 0].sort_values(by="Dividends", ascending=False)
-    if not div_view.empty:
-        st.bar_chart(div_view.set_index("Ticker")["Dividends"], color="#ffd54f")
-
-left, right = st.columns(2)
-with left:
-    st.subheader(f"Valoare de piață per simbol ({target_currency})")
-    if not view.empty:
-        st.bar_chart(view.set_index("Ticker")["Market Value"], color="#29b6f6")
-with right:
-    st.subheader(f"Alocare pe sectoare ({target_currency})")
-    sector_values = view.groupby("Sector")["Market Value"].sum()
-    if not sector_values.empty:
-        st.bar_chart(sector_values, color="#ab47bc")
-
-st.subheader("Editare poziții (în moneda originală)")
-edited = st.data_editor(view[required], num_rows="dynamic", use_container_width=True, key="portfolio_editor")
