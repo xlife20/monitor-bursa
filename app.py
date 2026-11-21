@@ -16,10 +16,13 @@ st.markdown("""
     }
     div[data-testid="stMetricValue"] { font-size: 1.55rem !important; }
     .tbl-box { max-height: 550px; overflow: auto; border: 1px solid #30363d; border-radius: 8px; background: #0e1117; }
-    .tbl-box table { width: 100%; border-collapse: collapse; font-size: 14px; color: #fafafa; }
+    .tbl-box table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 14px; color: #fafafa; }
     .tbl-box thead th { position: sticky; top: 0; background: #161b22; z-index: 2; padding: 10px 8px; text-align: left; border-bottom: 2px solid #30363d; white-space: nowrap; }
-    .tbl-box tbody td { padding: 8px; border-bottom: 1px solid #21262d; white-space: nowrap; }
-    .tbl-box tbody tr:hover { background: #1c2128; }
+    .tbl-box tbody td { padding: 8px; border-bottom: 1px solid #21262d; white-space: nowrap; background: #0e1117; }
+    .tbl-box tbody tr:hover td { background: #1c2128; }
+    .tbl-box thead th:first-child { position: sticky; left: 0; z-index: 4; border-right: 1px solid #30363d; }
+    .tbl-box tbody td:first-child { position: sticky; left: 0; z-index: 3; background: #161b22; border-right: 1px solid #30363d; }
+    .tbl-box tbody tr:hover td:first-child { background: #1c2128; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -100,7 +103,7 @@ df["SMA_Pct"] = np.where(df["SMA200"].notna() & (df["SMA200"] != 0), (df["Curren
 st.sidebar.header("Setări afișare")
 t_curr = st.sidebar.selectbox("Monedă raportare (Total)", ["EUR", "USD", "GBP"])
 c_filt = st.sidebar.selectbox("Filtrare poziții după monedă", ["Toate (Consolidat)"] + all_curr)
-sort_by = st.sidebar.selectbox("Ordonează tabelul după", ["Valoare piață", "Profit Total", "Dividende", "Randament %", "RSI (Crescător)", "vs SMA 200 %", "Simbol"])
+sort_by = st.sidebar.selectbox("Ordonează tabelul după", ["Valoare piață", "Profit Total", "Dividende", "Randament %", "RSI (Crescător)", "vs SMA 200 %", "Tiker"])
 
 t_rate = fx.get(t_curr, 1.0)
 eur_rate = fx.get("EUR", 1.08) / t_rate
@@ -117,7 +120,7 @@ extra_div = CLOSED_DIVS_EUR * eur_rate if c_filt == "Toate (Consolidat)" else 0.
 tot_mkt = view["Mkt"].sum()
 view["Wgt"] = np.where(tot_mkt != 0, view["Mkt"] / tot_mkt * 100, 0)
 
-s_map = {"Valoare piață": ("Mkt", False), "Profit Total": ("PnL", False), "Dividende": ("Div", False), "Randament %": ("Ret", False), "RSI (Crescător)": ("RSI", True), "vs SMA 200 %": ("SMA_Pct", True), "Simbol": ("Ticker", True)}
+s_map = {"Valoare piață": ("Mkt", False), "Profit Total": ("PnL", False), "Dividende": ("Div", False), "Randament %": ("Ret", False), "RSI (Crescător)": ("RSI", True), "vs SMA 200 %": ("SMA_Pct", True), "Tiker": ("Ticker", True)}
 col_s, asc_s = s_map[sort_by]
 view = view.sort_values(by=col_s, ascending=asc_s, na_position="last")
 
@@ -137,7 +140,7 @@ c5.metric("Profit Total (+Div.)", f"{pnl_s:,.2f} {t_curr}", f"{ret_s:.2f}%")
 st.subheader(f"Portofoliu (Valori convertite în {t_curr})")
 
 t_df = pd.DataFrame()
-t_df["Simbol"] = "<b>" + view["Ticker"] + "</b>"
+t_df["Tiker"] = "<b>" + view["Ticker"] + "</b>"
 t_df["Companie"] = view["Company"]
 t_df["Sector"] = view["Sector"]
 t_df["Acțiuni"] = view["Shares"].map(lambda x: f"{x:,.4g}")
