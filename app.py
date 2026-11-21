@@ -77,7 +77,7 @@ with col_s2:
         unsafe_allow_html=True
     )
 
-st.markdown("<br><p style='text-align: center; color: #9e9e9e;'>Alege secțiunea pe care dorești să o accesezi:</p>", unsafe_allow_html=True)
+st.markdown("<br>", unsafe_allow_html=True)
 
 _, c1, c2, c3, _ = st.columns([1.0, 1.2, 1.2, 1.2, 1.0])
 if c1.button("📈 Portofoliu XTB", use_container_width=True, type="primary"):
