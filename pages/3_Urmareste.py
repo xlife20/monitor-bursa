@@ -23,24 +23,21 @@ def get_auto_div_yields(tickers):
                 continue
             p_real = p_now * sc
 
+            info = tk.info or {}
+            dr = float(info.get("dividendRate") or 0) * sc
+            if dr > 0 and (dr / p_real) <= 0.12:
+                res_pct[t] = (dr / p_real) * 100.0
+                continue
+
             divs = tk.dividends
-            ann_div = 0.0
             if divs is not None and not divs.empty:
                 recent = divs[divs.index >= cutoff]
                 if not recent.empty:
                     vals = recent.values * sc
-                    if len(vals) >= 2:
-                        med = float(np.median(vals))
-                        vals = vals[vals <= med * 2.5]
+                    vals = vals[(vals / p_real) <= 0.10]
                     ann_div = float(np.sum(vals))
-
-            if ann_div <= 0:
-                info = tk.info or {}
-                dr = info.get("dividendRate") or info.get("trailingAnnualDividendRate") or 0
-                ann_div = float(dr) * sc
-
-            if ann_div > 0:
-                res_pct[t] = (ann_div / p_real) * 100.0
+                    if ann_div > 0:
+                        res_pct[t] = (ann_div / p_real) * 100.0
         except Exception:
             pass
     return res_pct
