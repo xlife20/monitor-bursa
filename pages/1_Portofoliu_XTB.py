@@ -2,22 +2,107 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from utils import load_csv, fetch_data, fetch_annual_dividends, c_pnl, c_rsi, f_price, f_shares, f_num2, f_rsi, f_sma, f_pct, clean_table, quick_del
+from utils import load_csv, save_csv_permanent, get_meta, fetch_data, fetch_annual_dividends, c_pnl, c_rsi, f_price, f_shares, f_num2, f_rsi, f_sma, f_pct, clean_table, quick_del
 
 st.set_page_config(page_title="Portofoliu XTB", layout="wide")
 CSV_PATH = Path(__file__).resolve().parent.parent / "portfolio.csv"
 CLOSED_DIVS_EUR = 18.24
 
-if st.button("⬅️ Meniu Principal"):
+def parse_xtb_report(uploaded_file, old_df):
+    raw = uploaded_file.getvalue().decode("utf-8", errors="ignore")
+    lines = raw.splitlines()
+    divs_eur = {}
+    in_cash = False
+    for line in lines:
+        if line.startswith("Type,Instrument,Ticker,Category,Time,Amount"):
+            in_cash = True
+            continue
+        if in_cash:
+            if line.startswith("Total,") or line.startswith("Account number"):
+                in_cash = False
+                continue
+            parts = [p.strip() for p in line.split(",")]
+            if len(parts) >= 6 and parts in ("Dividend", "Withholding tax") and parts:
+                tk = parts.replace(".US", "").replace(".UK", ".L").replace(".ES", ".MC").replace(".IT", ".MI")
+                try:
+                    divs_eur[tk] = divs_eur.get(tk, 0.0) + float(parts)
+                except ValueError:
+                    pass
+
+    open_rows = []
+    in_open = False
+    for line in lines:
+        if line.startswith("Product,Instrument/Position,Ticker,Category,Type,Volume"):
+            in_open = True
+            continue
+        if in_open:
+            parts = [p.strip() for p in line.split(",")]
+            if len(parts) >= 9 and parts in ("My Trades", "Investment Plan") and parts != "":
+                raw_tk = parts
+                tk = raw_tk.replace(".US", "").replace(".UK", ".L").replace(".ES", ".MC").replace(".IT", ".MI")
+                if "CVR" in tk or "US931" in tk:
+                    continue
+                vol = float(parts)
+                buy_p = float(parts)
+                match = old_df[old_df["Ticker"] == tk]
+                if not match.empty:
+                    comp, sec, curr = match.iloc["Company"], match.iloc["Sector"], match.iloc["Currency"]
+                else:
+                    comp, sec, curr = get_meta(tk)
+                    if raw_tk.endswith(".UK"):
+                        curr = "USD" if any(x in tk for x in ["ISLN", "EGLN", "SGLD", "COPX"]) else "GBP"
+                open_rows.append({
+                    "Ticker": tk, "Company": comp, "Sector": sec,
+                    "Shares": vol, "Buy Price": buy_p, "Current Price": buy_p,
+                    "Currency": curr, "Dividends EUR": round(max(divs_eur.get(tk, 0.0), 0.0), 2)
+                })
+
+    if not open_rows:
+        return pd.DataFrame()
+    res_df = pd.DataFrame(open_rows)
+    grouped = []
+    for tk, grp in res_df.groupby("Ticker", sort=False):
+        tot_sh = grp["Shares"].sum()
+        avg_b = (grp["Shares"] * grp["Buy Price"]).sum() / tot_sh if tot_sh > 0 else 0.0
+        grouped.append({
+            "Ticker": tk, "Company": grp.iloc["Company"], "Sector": grp.iloc["Sector"],
+            "Shares": round(tot_sh, 6), "Buy Price": round(avg_b, 4), "Current Price": round(avg_b, 4),
+            "Currency": grp.iloc["Currency"], "Dividends EUR": grp.iloc["Dividends EUR"]
+        })
+    return pd.DataFrame(grouped)
+
+if "show_imp_xtb" not in st.session_state:
+    st.session_state.show_imp_xtb = False
+
+nav1, nav2, _ = st.columns([1.2, 1.2, 5.6])
+if nav1.button("⬅️ Meniu Principal", use_container_width=True):
     st.switch_page("app.py")
+if nav2.button("📥 Importă XTB", use_container_width=True):
+    st.session_state.show_imp_xtb = not st.session_state.show_imp_xtb
+
 if st.sidebar.button("🔄 Actualizează prețurile live"):
     st.cache_data.clear()
     st.rerun()
 
-st.title("📈 Portofoliu XTB")
 req = ["Ticker", "Company", "Sector", "Shares", "Buy Price", "Current Price", "Currency", "Dividends EUR"]
 df = load_csv(CSV_PATH, req).copy()
 if "Dividends EUR" not in df.columns: df["Dividends EUR"] = 0.0
+
+if st.session_state.show_imp_xtb:
+    with st.container(border=True):
+        up_xtb = st.file_uploader("Încarcă raportul CSV exportat din XTB:", type=["csv"], key="up_xtb")
+        if up_xtb is not None and st.button("Procesează și Salvează Permanent", type="primary", key="btn_imp_xtb"):
+            new_df = parse_xtb_report(up_xtb, df)
+            if not new_df.empty:
+                ok = save_csv_permanent(new_df[req], CSV_PATH)
+                st.session_state.show_imp_xtb = False
+                st.cache_data.clear()
+                st.success("Importat și salvat permanent pe GitHub!" if ok else "Importat local!")
+                st.rerun()
+            else:
+                st.error("Nu am găsit poziții deschise valide în acest fișier CSV XTB.")
+
+st.title("📈 Portofoliu XTB")
 
 tickers = [x for x in df["Ticker"].dropna().unique().tolist() if str(x).strip() != ""]
 all_curr = sorted([x for x in df["Currency"].dropna().unique().tolist() if str(x).strip() != ""]) or ["EUR", "USD"]
@@ -95,20 +180,3 @@ if not view.empty:
     fmt = dict([("Acțiuni", f_shares), ("Preț mediu", f_price), ("RSI (14)", f_rsi), ("vs SMA 200 %", f_sma), ("Preț curent", f_price), ("Valoare investită", f_num2), ("Valoare piață", f_num2), ("Dividende", f_num2), ("Dividende / an (Est.)", f_num2), ("Dividend %", f_yoc), ("YoC %", f_yoc), ("Profit / Pierdere", f_num2), ("Randament %", f_pct), ("Pondere %", f_pct)])
     disp_clean = clean_table(disp, fmt)
     styler = disp_clean.style.map(c_pnl, subset=["Profit / Pierdere", "Randament %", "vs SMA 200 %"]).map(c_rsi, subset=["RSI (14)"])
-    st.dataframe(styler, use_container_width=True, hide_index=True, height=550, column_config=dict(Tiker=st.column_config.TextColumn("Tiker", pinned=True)))
-    quick_del(df, req, CSV_PATH, "xtb")
-    l1, r1 = st.columns(2)
-    with l1:
-        st.subheader(f"Profit / Pierdere Total ({t_curr})")
-        st.bar_chart(view.set_index("Ticker")[["PnL"]].assign(Color=np.where(view["PnL"] >= 0, "#00e676", "#ff5252")), y="PnL", color="Color")
-    with r1:
-        st.subheader(f"Valoare de piață ({t_curr})")
-        st.bar_chart(view.set_index("Ticker")["Mkt"], color="#29b6f6")
-
-st.subheader("Editare poziții (portfolio.csv)")
-edited = st.data_editor(view[req], num_rows="dynamic", use_container_width=True, key="ed_xtb")
-if st.button("Salvează modificările în portfolio.csv"):
-    up = edited if c_filt == "Toate (Consolidat)" else pd.concat([df[df["Currency"] != c_filt][req], edited], ignore_index=True)
-    up.to_csv(CSV_PATH, index=False)
-    st.cache_data.clear()
-    st.success("Salvat!")
