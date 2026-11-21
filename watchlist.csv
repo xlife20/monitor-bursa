@@ -1,4 +1,46 @@
-Ticker,Company,Sector,Target Price,Currency
-AAPL,Apple,Technology,210.00,USD
-MSFT,Microsoft,Technology,420.00,USD
-NVDA,Nvidia,Technology,130.00,USD
+Ticker,Company,Currency,Sector
+AAPL,Apple,USD,Technology
+MSFT,Microsoft,USD,Technology
+NVDA,Nvidia,USD,Technology
+LYB,LyondellBasell,USD,Materials
+ARE,Alexandria Real Estate,USD,Real Estate
+DGE.L,Diageo,GBP,Consumer Staples
+GLAD,Gladstone Capital,USD,Financials
+NVO,Novo Nordisk,USD,Healthcare
+INTC,Intel,USD,Technology
+RHM.DE,Rheinmetall,EUR,Industrials
+CMCSA,Comcast,USD,Communication Services
+KHC,Kraft Heinz,USD,Consumer Staples
+BATS.L,British American Tobacco,GBP,Consumer Staples
+VETH.DE,VanEck Ethereum ETN,EUR,Crypto / ETN
+ZTS,Zoetis,USD,Healthcare
+VICI,VICI Properties,USD,Real Estate
+UGI,UGI Corporation,USD,Utilities
+MCD,McDonald's,USD,Consumer Discretionary
+SPYD.DE,SPDR S&P US Dividend Aristocrats,EUR,ETF
+VBTC.DE,VanEck Bitcoin ETN,EUR,Crypto / ETN
+ISLN.L,iShares Physical Silver ETC,USD,Commodities
+O,Realty Income,USD,Real Estate
+PFE,Pfizer,USD,Healthcare
+ABF.L,Associated British Foods,GBP,Consumer Staples
+VZ,Verizon,USD,Communication Services
+NKE,Nike,USD,Consumer Discretionary
+PEP,PepsiCo,USD,Consumer Staples
+VT0P.DE,VanEck Crypto Leaders ETN,EUR,Crypto / ETN
+TGT,Target,USD,Consumer Discretionary
+EGLN.L,iShares Physical Gold ETC,USD,Commodities
+BMY,Bristol-Myers Squibb,USD,Healthcare
+CCCC,C4 Therapeutics,USD,Healthcare
+OXY,Occidental Petroleum,USD,Energy
+F,Ford Motor,USD,Consumer Discretionary
+SAB.MC,Banco Sabadell,EUR,Financials
+SOFI,SoFi Technologies,USD,Financials
+MPW,Medical Properties Trust,USD,Real Estate
+TISG.MI,The Italian Sea Group,EUR,Industrials
+ICU,SeaStar Medical,USD,Healthcare
+YYAI,AiRWA,USD,Technology
+SXR8.DE,iShares Core S&P 500 ETF,EUR,ETF
+SXRV.DE,iShares NASDAQ 100 ETF,EUR,ETF
+SGLD.L,Invesco Physical Gold ETC,USD,Commodities
+COPX.L,Global X Copper Miners ETF,USD,ETF
+URNU.DE,Global X Uranium ETF,EUR,ETF
