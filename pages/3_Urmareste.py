@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import yfinance as yf
+import time
 from pathlib import Path
 from utils import load_csv, save_csv_permanent, get_meta, fetch_data, c_pnl, f_price, f_rsi, f_sma, clean_table, quick_del
 
@@ -9,7 +10,7 @@ st.set_page_config(page_title="Urmărește", layout="wide")
 CSV_PATH = Path(__file__).resolve().parent.parent / "watchlist.csv"
 XTB_CSV = Path(__file__).resolve().parent.parent / "portfolio.csv"
 
-@st.cache_data(ttl=1800)
+@st.cache_data(ttl=86400, show_spinner=False)
 def get_auto_div_yields(tickers):
     res_pct = dict()
     uk = ["DGE.L", "BATS.L", "ABF.L"]
@@ -24,18 +25,20 @@ def get_auto_div_yields(tickers):
             p_real = p_now * sc
             info = tk.info or {}
             dr = float(info.get("dividendRate") or 0) * sc
-            if dr > 0 and (dr / p_real) <= 0.12:
+            if dr > 0 and (dr / p_real) <= 0.15:
                 res_pct[t] = (dr / p_real) * 100.0
+                time.sleep(0.1)
                 continue
             divs = tk.dividends
             if divs is not None and not divs.empty:
                 recent = divs[divs.index >= cutoff]
                 if not recent.empty:
                     vals = recent.values * sc
-                    vals = vals[(vals / p_real) <= 0.10]
+                    vals = vals[(vals / p_real) <= 0.12]
                     ann_div = float(np.sum(vals))
                     if ann_div > 0:
                         res_pct[t] = (ann_div / p_real) * 100.0
+            time.sleep(0.1)
         except Exception:
             pass
     return res_pct
@@ -96,8 +99,8 @@ c_filt = st.sidebar.selectbox("Filtrare după monedă", ["Toate"] + all_curr)
 sort_by = st.sidebar.selectbox(
     "Ordonează tabelul după",
     [
-        "vs Preț mediu % (Cele mai scăzute)",
         "Divident AN% (Descrescător)",
+        "vs Preț mediu % (Cele mai scăzute)",
         "RSI (Crescător - Supravândute)",
         "RSI (Descrescător - Supracumpărate)",
         "vs SMA 200 % (Crescător)",
@@ -111,8 +114,8 @@ sort_by = st.sidebar.selectbox(
 view = df.copy() if c_filt == "Toate" else df[df["Currency"] == c_filt].copy()
 
 s_map = dict([
-    ("vs Preț mediu % (Cele mai scăzute)", ("Diff_Avg_Pct", True)),
     ("Divident AN% (Descrescător)", ("Div_Yield", False)),
+    ("vs Preț mediu % (Cele mai scăzute)", ("Diff_Avg_Pct", True)),
     ("RSI (Crescător - Supravândute)", ("RSI", True)),
     ("RSI (Descrescător - Supracumpărate)", ("RSI", False)),
     ("vs SMA 200 % (Crescător)", ("SMA_Pct", True)),
