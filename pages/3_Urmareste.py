@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 from pathlib import Path
-from utils import load_csv, get_meta, fetch_data, c_pnl, c_rsi, f_price, f_rsi, f_sma, quick_del
+from utils import load_csv, get_meta, fetch_data, c_pnl, c_rsi, f_price, f_rsi, f_sma, clean_table, quick_del
 
 st.set_page_config(page_title="Urmărește", layout="wide")
 CSV_PATH = Path(__file__).resolve().parent.parent / "watchlist.csv"
@@ -22,13 +22,11 @@ def get_auto_div_yields(tickers):
             if p_now <= 0:
                 continue
             p_real = p_now * sc
-
             info = tk.info or {}
             dr = float(info.get("dividendRate") or 0) * sc
             if dr > 0 and (dr / p_real) <= 0.12:
                 res_pct[t] = (dr / p_real) * 100.0
                 continue
-
             divs = tk.dividends
             if divs is not None and not divs.empty:
                 recent = divs[divs.index >= cutoff]
@@ -93,8 +91,8 @@ with st.expander("➕ Adaugă rapid mai multe tikere odată", expanded=False):
 
 quick_del(df, w_cols, CSV_PATH, "watch")
 
-tickers = df["Ticker"].dropna().unique().tolist()
-all_curr = sorted(df["Currency"].dropna().unique().tolist()) or ["EUR", "USD"]
+tickers = [x for x in df["Ticker"].dropna().unique().tolist() if str(x).strip() != ""]
+all_curr = sorted([x for x in df["Currency"].dropna().unique().tolist() if str(x).strip() != ""]) or ["EUR", "USD"]
 prices, _, rsi_m, sma_m, _ = fetch_data(tickers, ["EUR", "USD", "GBP"])
 auto_yield_map = get_auto_div_yields(tickers)
 
@@ -138,21 +136,15 @@ view = view.sort_values(by=col_s, ascending=asc_s, na_position="last")
 
 st.sidebar.info(f"Fișier: `{CSV_PATH.name}`\n\nSimboluri afișate: {len(view)}/{len(df)}")
 
-def f_avg_blank(v):
-    if pd.isna(v):
-        return ""
-    return f"{v:,.4f}" if abs(v) < 2 else f"{v:,.2f}"
-
 def f_div_yield(v):
-    if pd.isna(v) or v <= 0:
-        return "-"
-    return f"{v:.2f}%"
+    return "" if (pd.isna(v) or v == "" or float(v) <= 0) else f"{float(v):.2f}%"
 
 if not view.empty:
     disp = view[["Ticker", "Company", "Currency", "Sector", "Avg_Price", "Current", "Div_Yield", "RSI", "SMA_Pct"]].copy()
     disp.columns = ["Tiker", "Companie", "Monedă", "Sector", "Preț mediu", "Preț curent", "Divident AN%", "RSI (14)", "vs SMA 200 %"]
-    fmt = dict([("Preț mediu", f_avg_blank), ("Preț curent", f_price), ("Divident AN%", f_div_yield), ("RSI (14)", f_rsi), ("vs SMA 200 %", f_sma)])
-    styler = disp.style.map(c_pnl, subset=["vs SMA 200 %"]).map(c_rsi, subset=["RSI (14)"]).format(fmt, na_rep="")
+    fmt = dict([("Preț mediu", f_price), ("Preț curent", f_price), ("Divident AN%", f_div_yield), ("RSI (14)", f_rsi), ("vs SMA 200 %", f_sma)])
+    disp_clean = clean_table(disp, fmt)
+    styler = disp_clean.style.map(c_pnl, subset=["vs SMA 200 %"]).map(c_rsi, subset=["RSI (14)"])
     st.dataframe(styler, use_container_width=True, hide_index=True, height=480, column_config=dict(Tiker=st.column_config.TextColumn("Tiker", pinned=True)))
 
 st.subheader("Editare listă (watchlist.csv)")
