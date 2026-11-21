@@ -8,7 +8,7 @@ st.set_page_config(page_title="Portofoliu Kraken", layout="wide")
 CSV_PATH = Path(__file__).resolve().parent.parent / "portfolio_kraken.csv"
 
 def norm_a(a):
-    s = str(a).strip().upper().split(".")[0]
+    s = str(a).strip().upper().split(".")
     if s.endswith(("21", "28")) and len(s) > 4: s = s[:-2]
     m = {"XXBT": "BTC", "XBT": "BTC", "XETH": "ETH", "XXRP": "XRP", "XLTC": "LTC", "XXLM": "XLM", "XDOGE": "DOGE", "ZEUR": "EUR", "ZUSD": "USD", "ZGBP": "GBP"}
     return m.get(s, s)
@@ -18,10 +18,12 @@ def parse_kraken(up_f):
     kdf.columns = kdf.columns.str.lower().str.strip()
     cols = set(kdf.columns)
     fiat = {"EUR", "USD", "GBP"}
+    skip_types = {"transfer", "rollover", "margin", "settle", "hybridearnwithdrawal", "hybridearndeposit"}
 
     if {"asset", "amount", "type"}.issubset(cols):
         kdf["amount"] = pd.to_numeric(kdf["amount"], errors="coerce").fillna(0.0)
         kdf["fee"] = pd.to_numeric(kdf.get("fee", 0.0), errors="coerce").fillna(0.0)
+        kdf["amountusd"] = pd.to_numeric(kdf.get("amountusd", 0.0), errors="coerce").fillna(0.0)
         kdf["type"] = kdf["type"].astype(str).str.lower().str.strip()
         kdf["norm"] = kdf["asset"].apply(norm_a)
         hold, cost, rew = {}, {}, {}
@@ -29,9 +31,12 @@ def parse_kraken(up_f):
 
         for _, r in kdf.iterrows():
             a, t, amt, fee = r["norm"], r["type"], float(r["amount"]), float(r["fee"])
-            if a in fiat or t in ("transfer", "rollover", "margin", "settle"): continue
+            if a in fiat or t in skip_types: continue
             net = amt - fee
             hold[a] = hold.get(a, 0.0) + net
+            if t == "deposit" and amt > 0:
+                usd_v = abs(float(r["amountusd"]))
+                if usd_v > 0: cost[a] = cost.get(a, 0.0) + (usd_v / 1.168)
             if t in ("reward", "staking", "earn", "airdrop", "dividend"):
                 rew[a] = rew.get(a, 0.0) + max(net, 0.0)
 
@@ -55,23 +60,6 @@ def parse_kraken(up_f):
             rw = rew.get(a, 0.0)
             rows.append({"Ticker": tk, "Company": f"{comp} (Earn: +{rw:.6f})" if rw > 0 else comp, "Sector": "Crypto", "Shares": round(sh, 8), "Buy Price": round(ap, 4), "Current Price": round(ap, 4), "Currency": "EUR", "Dividends EUR": 0.0})
         return pd.DataFrame(rows)
-
-    if {"pair", "vol", "cost"}.issubset(cols):
-        kdf["vol"] = pd.to_numeric(kdf["vol"], errors="coerce").fillna(0.0)
-        kdf["cost"] = pd.to_numeric(kdf["cost"], errors="coerce").fillna(0.0)
-        kdf["fee"] = pd.to_numeric(kdf.get("fee", 0.0), errors="coerce").fillna(0.0)
-        kdf["type"] = kdf.get("type", "buy").astype(str).str.lower()
-        rows = []
-        for p, g in kdf.groupby("pair"):
-            cp = str(p).replace("/", "-").replace("XXBT", "BTC").replace("XBT", "BTC").upper()
-            curr = cp.split("-")[-1] if "-" in cp else "EUR"
-            b, s = g[g["type"] == "buy"], g[g["type"] == "sell"]
-            nv = b["vol"].sum() - s["vol"].sum()
-            if nv <= 1e-7: continue
-            ap = ((b["cost"] + b["fee"]).sum() / b["vol"].sum()) if b["vol"].sum() > 0 else 0.0
-            comp, _, _ = get_meta(cp)
-            rows.append({"Ticker": cp, "Company": comp, "Sector": "Crypto", "Shares": round(nv, 8), "Buy Price": round(ap, 4), "Current Price": round(ap, 4), "Currency": curr, "Dividends EUR": 0.0})
-        return pd.DataFrame(rows)
     return pd.DataFrame()
 
 if "imp_krk" not in st.session_state: st.session_state.imp_krk = False
@@ -87,7 +75,7 @@ for c in req:
 
 if st.session_state.imp_krk:
     with st.container(border=True):
-        up_f = st.file_uploader("Încarcă CSV Kraken (Ledgers pentru Spot+Earn, sau Trades):", type="csv", key="up_krk")
+        up_f = st.file_uploader("Încarcă raportul CSV Kraken (Libro mayor / Ledgers):", type="csv", key="up_krk")
         if up_f is not None and st.button("Procesează și Salvează Permanent", type="primary"):
             ndf = parse_kraken(up_f)
             if not ndf.empty:
