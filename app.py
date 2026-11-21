@@ -1,5 +1,4 @@
 import streamlit as st
-import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 import yfinance as yf
@@ -26,6 +25,55 @@ st.markdown("""
     .custom-card-label { font-size: 0.875rem; color: #fafafa; margin-bottom: 4px; }
     .custom-card-val { font-size: 1.35rem; font-weight: 600; line-height: 1.2; }
     .custom-card-sub { font-size: 0.8rem; margin-top: 4px; color: #9e9e9e; }
+    .tbl-box {
+        height: 550px;
+        overflow: auto;
+        border: 1px solid #30363d;
+        border-radius: 8px;
+        background: #0e1117;
+    }
+    .tbl-box table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        font-size: 14px;
+        color: #fafafa;
+    }
+    .tbl-box thead th {
+        position: sticky;
+        top: 0;
+        background: #161b22;
+        z-index: 2;
+        padding: 10px 8px;
+        text-align: left;
+        border-bottom: 2px solid #30363d;
+        white-space: nowrap;
+    }
+    .tbl-box tbody td {
+        padding: 8px;
+        border-bottom: 1px solid #21262d;
+        white-space: nowrap;
+        background: #0e1117;
+    }
+    .tbl-box tbody tr:hover td { background: #1c2128; }
+    .tbl-box thead th:first-child {
+        position: sticky;
+        left: 0;
+        z-index: 4;
+        border-right: 1px solid #30363d;
+    }
+    .tbl-box tbody td:first-child {
+        position: sticky;
+        left: 0;
+        z-index: 3;
+        background: #161b22;
+        border-right: 1px solid #30363d;
+    }
+    .tbl-box tbody tr:hover td:first-child { background: #1c2128; }
+    .tbl-box::-webkit-scrollbar { width: 12px; height: 12px; }
+    .tbl-box::-webkit-scrollbar-track { background: #0e1117; }
+    .tbl-box::-webkit-scrollbar-thumb { background: #30363d; border-radius: 6px; }
+    .tbl-box::-webkit-scrollbar-thumb:hover { background: #58a6ff; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -160,7 +208,7 @@ with c6:
         unsafe_allow_html=True
     )
 
-st.subheader(f"Portofoliu (Valori convertite în {t_curr}) — trage cu click stânga pentru a derula")
+st.subheader(f"Portofoliu (Valori convertite în {t_curr})")
 
 t_df = pd.DataFrame()
 t_df["Tiker"] = "<b>" + view["Ticker"] + "</b>"
@@ -179,28 +227,12 @@ t_df["Profit / Pierdere"] = view["PnL"].map(lambda x: f"<span style='color:{'#00
 t_df["Randament %"] = view["Ret"].map(lambda x: f"<span style='color:{'#00e676' if x>0 else ('#ff5252' if x<0 else '#fafafa')};font-weight:bold'>{x:.2f}%</span>")
 t_df["Pondere %"] = view["Wgt"].map(lambda x: f"{x:.2f}%")
 
-css_part = (
-    "<style>"
-    "body { margin: 0; padding: 0; background: #0e1117; font-family: sans-serif; }"
-    ".tbl-box { height: 550px; overflow: auto; border: 1px solid #30363d; border-radius: 8px; background: #0e1117; cursor: grab; user-select: none; }"
-    ".tbl-box:active { cursor: grabbing; }"
-    "table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 14px; color: #fafafa; }"
-    "thead th { position: sticky; top: 0; background: #161b22; z-index: 2; padding: 10px 8px; text-align: left; border-bottom: 2px solid #30363d; white-space: nowrap; }"
-    "tbody td { padding: 8px; border-bottom: 1px solid #21262d; white-space: nowrap; background: #0e1117; }"
-    "tbody tr:hover td { background: #1c2128; }"
-    "thead th:first-child { position: sticky; left: 0; z-index: 4; border-right: 1px solid #30363d; }"
-    "tbody td:first-child { position: sticky; left: 0; z-index: 3; background: #161b22; border-right: 1px solid #30363d; }"
-    "tbody tr:hover td:first-child { background: #1c2128; }"
-    "</style>"
-)
+st.markdown(f"<div class='tbl-box'>{t_df.to_html(escape=False, index=False)}</div>", unsafe_allow_html=True)
 
-js_part = (
-    "<script>"
-    "const el = document.getElementById('dragTable');"
-    "let isDown = false, startX, startY, scrollLeft, scrollTop;"
-    "el.addEventListener('mousedown', (e) => { isDown = true; startX = e.pageX - el.offsetLeft; startY = e.pageY - el.offsetTop; scrollLeft = el.scrollLeft; scrollTop = el.scrollTop; });"
-    "window.addEventListener('mouseup', () => { isDown = false; });"
-    "el.addEventListener('mousemove', (e) => { if (!isDown) return; e.preventDefault(); el.scrollLeft = scrollLeft - (e.pageX - el.offsetLeft - startX); el.scrollTop = scrollTop - (e.pageY - el.offsetTop - startY); });"
-    "</script>"
-)
-
+st.write("")
+l1, r1 = st.columns(2)
+with l1:
+    st.subheader(f"Profit / Pierdere Total ({t_curr})")
+    if not view.empty:
+        p_df = view.set_index("Ticker")[["PnL"]].assign(Color=np.where(view["PnL"] >= 0, "#00e676", "#ff5252"))
+        st.bar_chart(p_df, y="PnL", color="Color")
