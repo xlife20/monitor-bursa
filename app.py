@@ -61,7 +61,7 @@ def fetch_live_market_data(tickers, currencies):
         try:
             data = yf.download(tickers, period="1y", progress=False)["Close"]
             if isinstance(data, pd.Series):
-                t = tickers if isinstance(tickers, list) else tickers
+                t = tickers[0] if isinstance(tickers, list) else tickers
                 s = data.dropna()
                 if not s.empty:
                     scale = 0.01 if t in uk_pence_tickers else 1.0
@@ -88,7 +88,7 @@ def fetch_live_market_data(tickers, currencies):
         try:
             fx_data = yf.download(fx_tickers, period="5d", progress=False)["Close"]
             if isinstance(fx_data, pd.Series):
-                c = other_curr
+                c = other_curr[0]
                 if not fx_data.dropna().empty:
                     fx_rates[c] = float(fx_data.dropna().iloc[-1])
             else:
@@ -262,11 +262,7 @@ def style_sma200_row(row):
             styles[idx] = "color: #ff5252; font-weight: bold;"
     return styles
 
-fmt_dict = {
-    "Acțiuni": "{:,.4g}",
-    "Preț mediu": "{:,.2f}",
-    "RSI (14)": "{:.1f}",
-    "SMA 200": "{:,.2f}",
-    "Preț curent": "{:,.2f}",
-    "Valoare investită": "{:,.2f}",
-    "Valoare piață": "{:,.2f}",
+styler = display_df.style.apply(style_sma200_row, axis=1)
+styler = styler.map(color_pnl_cols, subset=["Profit / Pierdere", "Randament %"])
+styler = styler.map(color_rsi_col, subset=["RSI (14)"])
+styler = styler.format({
