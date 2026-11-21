@@ -68,13 +68,26 @@ def c_rsi(v):
     if pd.isna(v): return ""
     return "color: #00e676; font-weight: bold;" if v <= 30 else ("color: #ff5252; font-weight: bold;" if v >= 70 else "")
 
-def fmt_price(v):
+def f_price(v):
     if pd.isna(v): return "-"
     return f"{v:,.4f}" if abs(v) < 2 else f"{v:,.2f}"
 
-def fmt_shares(v):
+def f_shares(v):
     if pd.isna(v): return "-"
-    return f"{v:,.6f}".rstrip("0").rstrip(".")
+    s = f"{v:,.6f}".rstrip("0").rstrip(".")
+    return s if s else "0"
+
+def f_num2(v):
+    return "-" if pd.isna(v) else f"{v:,.2f}"
+
+def f_rsi(v):
+    return "-" if pd.isna(v) else f"{v:.1f}"
+
+def f_sma(v):
+    return "-" if pd.isna(v) else f"{v:+.2f}%"
+
+def f_pct(v):
+    return "-" if pd.isna(v) else f"{v:.2f}%"
 
 def render_portfolio(is_kraken):
     if st.button("⬅️ Înapoi la Meniul Principal"):
@@ -138,9 +151,9 @@ def render_portfolio(is_kraken):
         cols = ["Ticker", "Company", "Sector", "Shares", "Buy Price", "RSI", "SMA_Pct", "Current Price", "Currency", "Inv", "Mkt"] + ([] if is_kraken else ["Div"]) + ["PnL", "Ret", "Wgt"]
         disp = view[cols].copy()
         disp.columns = ["Tiker", "Companie", "Sector", "Acțiuni", "Preț mediu", "RSI (14)", "vs SMA 200 %", "Preț curent", "Monedă", "Valoare investită", "Valoare piață"] + ([] if is_kraken else ["Dividende"]) + ["Profit / Pierdere", "Randament %", "Pondere %"]
-        fmt = dict([("Acțiuni", fmt_shares), ("Preț mediu", fmt_price), ("RSI (14)", "{:.1f}"), ("vs SMA 200 %", "{:+.2f}%"), ("Preț curent", fmt_price), ("Valoare investită", "{:,.2f}"), ("Valoare piață", "{:,.2f}"), ("Profit / Pierdere", "{:,.2f}"), ("Randament %", "{:.2f}%"), ("Pondere %", "{:.2f}%")])
-        if not is_kraken: fmt["Dividende"] = "{:,.2f}"
-        styler = disp.style.map(c_pnl, subset=["Profit / Pierdere", "Randament %", "vs SMA 200 %"]).map(c_rsi, subset=["RSI (14)"]).format(fmt, na_rep="-")
+        fmt = dict([("Acțiuni", f_shares), ("Preț mediu", f_price), ("RSI (14)", f_rsi), ("vs SMA 200 %", f_sma), ("Preț curent", f_price), ("Valoare investită", f_num2), ("Valoare piață", f_num2), ("Profit / Pierdere", f_num2), ("Randament %", f_pct), ("Pondere %", f_pct)])
+        if not is_kraken: fmt["Dividende"] = f_num2
+        styler = disp.style.map(c_pnl, subset=["Profit / Pierdere", "Randament %", "vs SMA 200 %"]).map(c_rsi, subset=["RSI (14)"]).format(fmt)
         st.dataframe(styler, use_container_width=True, hide_index=True, height=550, column_config=dict(Tiker=st.column_config.TextColumn("Tiker", pinned=True)))
         l1, r1 = st.columns(2)
         with l1:
@@ -168,8 +181,3 @@ def page_home():
 def page_xtb():
     render_portfolio(False)
 
-def page_kraken():
-    render_portfolio(True)
-
-home_page = st.Page(page_home, title="Meniu Principal", default=True)
-xtb_page = st.Page(page_xtb, title="Portofoliu XTB")
