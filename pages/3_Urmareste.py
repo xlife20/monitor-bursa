@@ -14,7 +14,7 @@ if st.sidebar.button("🔄 Actualizează prețurile live"):
     st.rerun()
 
 st.title("👁️ Listă de Urmărire (Watchlist)")
-w_cols = ["Ticker", "Company", "Sector", "Target Price", "Currency"]
+w_cols = ["Ticker", "Company", "Currency", "Sector", "Target Price"]
 df = load_csv(CSV_PATH, w_cols).copy()
 
 with st.expander("➕ Adaugă rapid mai multe tikere odată", expanded=False):
@@ -27,9 +27,9 @@ with st.expander("➕ Adaugă rapid mai multe tikere odată", expanded=False):
             rows = []
             for t in to_add:
                 comp, sec, curr = get_meta(t)
-                rows.append(dict(Ticker=t, Company=comp, Sector=sec, Target_Price=0.0, Currency=curr))
+                rows.append(dict(Ticker=t, Company=comp, Currency=curr, Sector=sec, Target_Price=0.0))
             add_df = pd.DataFrame(rows).rename(columns=dict(Target_Price="Target Price"))
-            pd.concat([df, add_df], ignore_index=True).to_csv(CSV_PATH, index=False)
+            pd.concat([df, add_df], ignore_index=True)[w_cols].to_csv(CSV_PATH, index=False)
             st.cache_data.clear()
             st.rerun()
 
@@ -47,8 +47,8 @@ df["SMA200"] = pd.to_numeric(df["Ticker"].map(sma_m), errors="coerce").astype(fl
 df["SMA_Pct"] = np.where(df["SMA200"].notna() & (df["SMA200"] != 0), (df["Current"] - df["SMA200"]) / df["SMA200"] * 100, np.nan).astype(float)
 
 if not df.empty:
-    disp = df[["Ticker", "Company", "Sector", "Current", "Day_Pct", "Target Price", "Diff_Target", "RSI", "SMA_Pct", "Currency"]].copy()
-    disp.columns = ["Tiker", "Companie", "Sector", "Preț curent", "Variație Azi %", "Preț Țintă", "vs Țintă %", "RSI (14)", "vs SMA 200 %", "Monedă"]
+    disp = df[["Ticker", "Company", "Currency", "Sector", "Current", "Day_Pct", "Target Price", "Diff_Target", "RSI", "SMA_Pct"]].copy()
+    disp.columns = ["Tiker", "Companie", "Monedă", "Sector", "Preț curent", "Variație Azi %", "Preț Țintă", "vs Țintă %", "RSI (14)", "vs SMA 200 %"]
     fmt = dict([("Preț curent", f_price), ("Variație Azi %", f_sma), ("Preț Țintă", f_price), ("vs Țintă %", f_sma), ("RSI (14)", f_rsi), ("vs SMA 200 %", f_sma)])
     styler = disp.style.map(c_pnl, subset=["Variație Azi %", "vs SMA 200 %"]).map(c_target, subset=["vs Țintă %"]).map(c_rsi, subset=["RSI (14)"]).format(fmt)
     st.dataframe(styler, use_container_width=True, hide_index=True, height=450, column_config=dict(Tiker=st.column_config.TextColumn("Tiker", pinned=True)))
