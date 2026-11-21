@@ -23,11 +23,11 @@ def parse_xtb_report(uploaded_file, old_df):
     for row in reader:
         if not row:
             continue
-        first = str(row).strip()
-        if first == "Type" and len(row) >= 6 and str(row).strip() == "Amount":
+        first = str(row[0]).strip()
+        if first == "Type" and len(row) >= 6 and str(row[5]).strip() == "Amount":
             mode = "cash"
             continue
-        if first == "Product" and len(row) >= 9 and str(row).strip() == "Open price":
+        if first == "Product" and len(row) >= 9 and str(row[8]).strip() == "Open price":
             mode = "open"
             continue
         if first in ("Total", "Account number", "Note"):
@@ -35,7 +35,7 @@ def parse_xtb_report(uploaded_file, old_df):
             continue
 
         if mode == "cash" and len(row) >= 6:
-            op_type, raw_tk, amt_str = str(row).strip(), str(row).strip(), str(row).strip()
+            op_type, raw_tk, amt_str = str(row[0]).strip(), str(row[2]).strip(), str(row[5]).strip()
             if op_type in ("Dividend", "Withholding tax") and raw_tk:
                 tk = clean_xtb_ticker(raw_tk)
                 try:
@@ -44,7 +44,7 @@ def parse_xtb_report(uploaded_file, old_df):
                     pass
 
         elif mode == "open" and len(row) >= 9:
-            prod, raw_tk, cat, vol_str, open_p_str = str(row).strip(), str(row).strip(), str(row).strip(), str(row).strip(), str(row).strip()
+            prod, raw_tk, cat, vol_str, open_p_str = str(row[0]).strip(), str(row[2]).strip(), str(row[3]).strip(), str(row[5]).strip(), str(row[8]).strip()
             if prod in ("My Trades", "Investment Plan") and raw_tk and cat != "":
                 tk = clean_xtb_ticker(raw_tk)
                 if "CVR" in tk or "US931" in tk:
@@ -59,9 +59,9 @@ def parse_xtb_report(uploaded_file, old_df):
                 if not old_df.empty and "Ticker" in old_df.columns:
                     match = old_df[old_df["Ticker"].astype(str) == tk]
                     if not match.empty:
-                        comp = str(match["Company"].iloc)
-                        sec = str(match["Sector"].iloc)
-                        curr = str(match["Currency"].iloc)
+                        comp = str(match["Company"].iloc[0])
+                        sec = str(match["Sector"].iloc[0])
+                        curr = str(match["Currency"].iloc[0])
                 if not comp:
                     comp, sec, curr = get_meta(tk)
                     if raw_tk.endswith(".UK"):
@@ -88,13 +88,13 @@ def parse_xtb_report(uploaded_file, old_df):
         avg_b = (grp["Shares"] * grp["Buy Price"]).sum() / tot_sh if tot_sh > 0 else 0.0
         grouped.append({
             "Ticker": str(tk),
-            "Company": str(grp["Company"].iloc),
-            "Sector": str(grp["Sector"].iloc),
+            "Company": str(grp["Company"].iloc[0]),
+            "Sector": str(grp["Sector"].iloc[0]),
             "Shares": round(float(tot_sh), 6),
             "Buy Price": round(float(avg_b), 4),
             "Current Price": round(float(avg_b), 4),
-            "Currency": str(grp["Currency"].iloc),
-            "Dividends EUR": float(grp["Dividends EUR"].iloc)
+            "Currency": str(grp["Currency"].iloc[0]),
+            "Dividends EUR": float(grp["Dividends EUR"].iloc[0])
         })
     return pd.DataFrame(grouped)
 
