@@ -80,7 +80,7 @@ def fetch_data(tickers, currencies):
     uk = ["DGE.L", "BATS.L", "ABF.L"]
     if tickers:
         try:
-            data = yf.download(tickers, period="1y", progress=False)["Close"]
+            data = yf.download(tickers, period="1y", progress=False, auto_adjust=False)["Close"]
             for t in ([tickers] if isinstance(tickers, str) else tickers):
                 s = data.dropna() if isinstance(data, pd.Series) else (data[t].dropna() if t in data.columns else pd.Series())
                 if not s.empty:
@@ -95,7 +95,7 @@ def fetch_data(tickers, currencies):
     fb = dict(EUR=1.08, GBP=1.27, RON=0.22)
     if other:
         try:
-            fxd = yf.download([c + "USD=X" for c in other], period="5d", progress=False)["Close"]
+            fxd = yf.download([c + "USD=X" for c in other], period="5d", progress=False, auto_adjust=False)["Close"]
             for c in other:
                 ft = c + "USD=X"
                 s = fxd.dropna() if isinstance(fxd, pd.Series) else (fxd[ft].dropna() if ft in fxd.columns else pd.Series())
