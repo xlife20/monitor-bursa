@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 from pathlib import Path
-from utils import load_csv, save_csv_permanent, get_meta, fetch_data, c_pnl, c_rsi, f_price, f_rsi, clean_table, quick_del
+from utils import load_csv, save_csv_permanent, get_meta, fetch_data, c_pnl, c_rsi, f_price, f_rsi, f_sma, clean_table, quick_del
 
 st.set_page_config(page_title="Urmărește", layout="wide")
 CSV_PATH = Path(__file__).resolve().parent.parent / "watchlist.csv"
@@ -85,8 +85,6 @@ auto_yield_map = get_auto_div_yields(tickers)
 
 df["Avg_Price"] = pd.to_numeric(df["Ticker"].map(avg_price_map), errors="coerce").astype(float)
 df["Current"] = pd.to_numeric(df["Ticker"].map(prices), errors="coerce").astype(float)
-df["Price_5"] = np.where(df["Avg_Price"] > 0, df["Avg_Price"] * 0.95, np.nan).astype(float)
-df["Price_10"] = np.where(df["Avg_Price"] > 0, df["Avg_Price"] * 0.90, np.nan).astype(float)
 df["Diff_Avg_Pct"] = np.where((df["Avg_Price"] > 0) & df["Current"].notna(), (df["Current"] - df["Avg_Price"]) / df["Avg_Price"] * 100, np.nan).astype(float)
 df["Div_Yield"] = pd.to_numeric(df["Ticker"].map(auto_yield_map), errors="coerce").astype(float)
 df["RSI"] = pd.to_numeric(df["Ticker"].map(rsi_m), errors="coerce").astype(float)
@@ -98,7 +96,7 @@ c_filt = st.sidebar.selectbox("Filtrare după monedă", ["Toate"] + all_curr)
 sort_by = st.sidebar.selectbox(
     "Ordonează tabelul după",
     [
-        "Cele mai scăzute vs Preț mediu",
+        "vs Preț mediu % (Cele mai scăzute)",
         "Divident AN% (Descrescător)",
         "RSI (Crescător - Supravândute)",
         "RSI (Descrescător - Supracumpărate)",
@@ -113,7 +111,7 @@ sort_by = st.sidebar.selectbox(
 view = df.copy() if c_filt == "Toate" else df[df["Currency"] == c_filt].copy()
 
 s_map = dict([
-    ("Cele mai scăzute vs Preț mediu", ("Diff_Avg_Pct", True)),
+    ("vs Preț mediu % (Cele mai scăzute)", ("Diff_Avg_Pct", True)),
     ("Divident AN% (Descrescător)", ("Div_Yield", False)),
     ("RSI (Crescător - Supravândute)", ("RSI", True)),
     ("RSI (Descrescător - Supracumpărate)", ("RSI", False)),
@@ -147,30 +145,13 @@ def color_sma_combined(v):
     except Exception:
         return ""
 
-def highlight_targets(row):
-    styles = [""] * len(row)
-    try:
-        cur = float(str(row["Preț curent"]).replace(",", ""))
-        p5 = float(str(row["Țintă -5%"]).replace(",", ""))
-        p10 = float(str(row["Țintă -10%"]).replace(",", ""))
-        idx5 = row.index.get_loc("Țintă -5%")
-        idx10 = row.index.get_loc("Țintă -10%")
-        if cur <= p10:
-            styles[idx10] = "color: #ff5252; font-weight: bold;"
-            styles[idx5] = "color: #ffab40; font-weight: bold;"
-        elif cur <= p5:
-            styles[idx5] = "color: #ffab40; font-weight: bold;"
-    except Exception:
-        pass
-    return styles
-
 if not view.empty:
     view["SMA_Disp"] = view.apply(fmt_sma_combined, axis=1)
-    disp = view[["Ticker", "Company", "Currency", "Sector", "Price_5", "Price_10", "Avg_Price", "Current", "Div_Yield", "RSI", "SMA_Disp"]].copy()
-    disp.columns = ["Tiker", "Companie", "Monedă", "Sector", "Țintă -5%", "Țintă -10%", "Preț mediu", "Preț curent", "Divident AN%", "RSI (14)", "SMA 200"]
-    fmt = dict([("Țintă -5%", f_price), ("Țintă -10%", f_price), ("Preț mediu", f_price), ("Preț curent", f_price), ("Divident AN%", f_div_yield), ("RSI (14)", f_rsi)])
+    disp = view[["Ticker", "Company", "Currency", "Sector", "Diff_Avg_Pct", "Avg_Price", "Current", "Div_Yield", "RSI", "SMA_Disp"]].copy()
+    disp.columns = ["Tiker", "Companie", "Monedă", "Sector", "vs Preț mediu %", "Preț mediu", "Preț curent", "Divident AN%", "RSI (14)", "SMA 200"]
+    fmt = dict([("vs Preț mediu %", f_sma), ("Preț mediu", f_price), ("Preț curent", f_price), ("Divident AN%", f_div_yield), ("RSI (14)", f_rsi)])
     disp_clean = clean_table(disp, fmt)
-    styler = disp_clean.style.apply(highlight_targets, axis=1).map(color_sma_combined, subset=["SMA 200"]).map(c_rsi, subset=["RSI (14)"])
+    styler = disp_clean.style.map(c_pnl, subset=["vs Preț mediu %"]).map(color_sma_combined, subset=["SMA 200"]).map(c_rsi, subset=["RSI (14)"])
     st.dataframe(styler, use_container_width=True, hide_index=True, height=480, column_config=dict(Tiker=st.column_config.TextColumn("Tiker", pinned=True)))
 
 st.subheader("Editare listă (watchlist.csv)")
