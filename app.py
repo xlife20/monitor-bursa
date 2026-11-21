@@ -8,13 +8,6 @@ st.set_page_config(page_title="Panou Portofoliu", layout="wide")
 
 st.markdown("""
 <style>
-    .stApp {
-        background-color: #0e1117;
-        color: #fafafa;
-    }
-    section[data-testid="stSidebar"] {
-        background-color: #161b22;
-    }
     div[data-testid="stMetric"] {
         background-color: #161b22;
         border: 1px solid #30363d;
@@ -23,9 +16,6 @@ st.markdown("""
     }
     div[data-testid="stMetricValue"] {
         font-size: 1.55rem !important;
-    }
-    h1, h2, h3, p, label, .stMarkdown {
-        color: #fafafa !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -270,3 +260,13 @@ def style_sma200_row(row):
             styles[idx] = "color: #00e676; font-weight: bold;"
         elif price < sma:
             styles[idx] = "color: #ff5252; font-weight: bold;"
+    return styles
+
+fmt_dict = {
+    "Acțiuni": "{:,.4g}",
+    "Preț mediu": "{:,.2f}",
+    "RSI (14)": "{:.1f}",
+    "SMA 200": "{:,.2f}",
+    "Preț curent": "{:,.2f}",
+    "Valoare investită": "{:,.2f}",
+    "Valoare piață": "{:,.2f}",
