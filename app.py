@@ -51,7 +51,7 @@ def fetch_live_market_data(tickers, currencies):
         try:
             data = yf.download(tickers, period="5d", progress=False)["Close"]
             if isinstance(data, pd.Series):
-                t = tickers
+                t = tickers[0] if isinstance(tickers, list) else tickers
                 if not data.dropna().empty:
                     val = float(data.dropna().iloc[-1])
                     prices[t] = val / 100.0 if t in uk_pence_tickers else val
@@ -71,7 +71,7 @@ def fetch_live_market_data(tickers, currencies):
         try:
             fx_data = yf.download(fx_tickers, period="5d", progress=False)["Close"]
             if isinstance(fx_data, pd.Series):
-                c = other_curr
+                c = other_curr[0]
                 if not fx_data.dropna().empty:
                     fx_rates[c] = float(fx_data.dropna().iloc[-1])
             else:
@@ -263,4 +263,3 @@ with right:
 
 st.subheader("Editare poziții (în moneda originală)")
 edited = st.data_editor(view[required], num_rows="dynamic", use_container_width=True, key="portfolio_editor")
-if st.button("Salvează modificările în portfolio.csv"):
