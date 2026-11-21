@@ -17,23 +17,29 @@ def load_data():
 @st.cache_data(ttl=300)
 def fetch_live_market_data(tickers, currencies):
     prices = {}
-    fx_rates = {"USD": 1.0}  # Rata față de USD (1 USD = X monedă)
+    fx_rates = {"USD": 1.0}
+
+    # Simbolurile de pe bursa din Londra cotate în pence (GBX) în loc de lire (GBP)
+    uk_pence_tickers = {"DGE.L", "BATS.L", "ABF.L"}
 
     # 1. Prețuri acțiuni
     if tickers:
         try:
             data = yf.download(tickers, period="5d", progress=False)["Close"]
             if isinstance(data, pd.Series):
+                t = tickers
                 if not data.dropna().empty:
-                    prices[tickers] = float(data.dropna().iloc[-1])
+                    val = float(data.dropna().iloc[-1])
+                    prices[t] = val / 100.0 if t in uk_pence_tickers else val
             else:
                 for t in tickers:
                     if t in data.columns and not data[t].dropna().empty:
-                        prices[t] = float(data[t].dropna().iloc[-1])
+                        val = float(data[t].dropna().iloc[-1])
+                        prices[t] = val / 100.0 if t in uk_pence_tickers else val
         except Exception:
             pass
 
-    # 2. Cursuri valutare live față de USD (ex: EURUSD=X -> 1 EUR în USD)
+    # 2. Cursuri valutare live față de USD
     other_curr = [c for c in currencies if c != "USD"]
     fx_tickers = [f"{c}USD=X" for c in other_curr]
     fallback_to_usd = {"EUR": 1.08, "GBP": 1.27, "RON": 0.22}
@@ -88,7 +94,7 @@ target_currency = st.sidebar.selectbox("Monedă raportare (Total)", ["EUR", "USD
 filter_options = ["Toate (Consolidat)"] + all_currencies
 currency_filter = st.sidebar.selectbox("Filtrare poziții după monedă", filter_options)
 
-# Conversie în moneda aleasă (target_currency)
+# Conversie în moneda aleasă
 df["Rate_to_USD"] = df["Currency"].map(fx_to_usd).fillna(1.0)
 target_rate_to_usd = fx_to_usd.get(target_currency, 1.0)
 df["FX_Multiplier"] = df["Rate_to_USD"] / target_rate_to_usd
@@ -103,7 +109,6 @@ if currency_filter == "Toate (Consolidat)":
 else:
     view = df[df["Currency"] == currency_filter].copy()
 
-# Afișare cursuri folosite în bara laterală
 eur_usd = fx_to_usd.get("EUR", 1.08)
 gbp_eur = fx_to_usd.get("GBP", 1.27) / eur_usd
 st.sidebar.info(
@@ -120,12 +125,12 @@ pnl = view["Profit/Loss"].sum()
 ret = pnl / invested * 100 if invested else 0
 total_shares = view["Shares"].sum()
 
-c1, c2, c3, c4, c5 = st.columns(5)
+c1, c2, c3, c4, c5 = st.columns([1, 1, 1.3, 1.3, 1.3])
 c1.metric("Acțiuni / Unități", f"{total_shares:,.4g}")
 c2.metric("Poziții deschise", f"{len(view)}")
-c3.metric(f"Capital investit ({target_currency})", f"{invested:,.2f} {target_currency}")
-c4.metric(f"Valoare piață ({target_currency})", f"{market:,.2f} {target_currency}")
-c5.metric(f"Profit / Pierdere ({target_currency})", f"{pnl:,.2f} {target_currency}", f"{ret:.2f}%")
+c3.metric("Capital investit", f"{invested:,.2f} {target_currency}")
+c4.metric("Valoare piață", f"{market:,.2f} {target_currency}")
+c5.metric("Profit / Pierdere", f"{pnl:,.2f} {target_currency}", f"{ret:.2f}%")
 
 st.subheader(f"Portofoliu (Valori convertite în {target_currency})")
 display_cols = [
