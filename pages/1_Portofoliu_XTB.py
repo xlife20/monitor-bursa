@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import csv
+import io
 from pathlib import Path
 from utils import load_csv, save_csv_permanent, get_meta, fetch_data, fetch_annual_dividends, c_pnl, c_rsi, f_price, f_shares, f_num2, f_rsi, f_sma, f_pct, clean_table, quick_del
 
@@ -8,62 +10,75 @@ st.set_page_config(page_title="Portofoliu XTB", layout="wide")
 CSV_PATH = Path(__file__).resolve().parent.parent / "portfolio.csv"
 CLOSED_DIVS_EUR = 18.24
 
+def clean_xtb_ticker(raw_tk):
+    return raw_tk.replace(".US", "").replace(".UK", ".L").replace(".ES", ".MC").replace(".IT", ".MI")
+
 def parse_xtb_report(uploaded_file, old_df):
     raw = uploaded_file.getvalue().decode("utf-8", errors="ignore")
-    lines = raw.splitlines()
+    reader = csv.reader(io.StringIO(raw))
     divs_eur = {}
-    in_cash = False
-    for line in lines:
-        if line.startswith("Type,Instrument,Ticker,Category,Time,Amount"):
-            in_cash = True
+    open_rows = []
+    mode = ""
+
+    for row in reader:
+        if not row:
             continue
-        if in_cash:
-            if line.startswith("Total,") or line.startswith("Account number"):
-                in_cash = False
-                continue
-            parts = [p.strip() for p in line.split(",")]
-            if len(parts) >= 6 and parts[0] in ("Dividend", "Withholding tax") and parts[2]:
-                tk = parts[2].replace(".US", "").replace(".UK", ".L").replace(".ES", ".MC").replace(".IT", ".MI")
+        first = row.strip()
+        if first == "Type" and len(row) >= 6 and row.strip() == "Amount":
+            mode = "cash"
+            continue
+        if first == "Product" and len(row) >= 9 and row.strip() == "Open price":
+            mode = "open"
+            continue
+        if first in ("Total", "Account number", "Note"):
+            mode = ""
+            continue
+
+        if mode == "cash" and len(row) >= 6:
+            op_type, raw_tk, amt_str = row.strip(), row.strip(), row.strip()
+            if op_type in ("Dividend", "Withholding tax") and raw_tk:
+                tk = clean_xtb_ticker(raw_tk)
                 try:
-                    divs_eur[tk] = divs_eur.get(tk, 0.0) + float(parts[5])
+                    divs_eur[tk] = divs_eur.get(tk, 0.0) + float(amt_str)
                 except ValueError:
                     pass
 
-    open_rows = []
-    in_open = False
-    for line in lines:
-        if line.startswith("Product,Instrument/Position,Ticker,Category,Type,Volume"):
-            in_open = True
-            continue
-        if in_open:
-            parts = [p.strip() for p in line.split(",")]
-            if len(parts) >= 9 and parts[0] in ("My Trades", "Investment Plan") and parts[4] != "":
-                raw_tk = parts[2]
-                tk = raw_tk.replace(".US", "").replace(".UK", ".L").replace(".ES", ".MC").replace(".IT", ".MI")
+        elif mode == "open" and len(row) >= 9:
+            prod, raw_tk, cat, vol_str, open_p_str = row.strip(), row.strip(), row.strip(), row.strip(), row.strip()
+            if prod in ("My Trades", "Investment Plan") and raw_tk and cat != "":
+                tk = clean_xtb_ticker(raw_tk)
                 if "CVR" in tk or "US931" in tk:
                     continue
                 try:
-                    vol = float(parts[5])
-                    buy_p = float(parts[8])
+                    vol = float(vol_str)
+                    buy_p = float(open_p_str)
                 except ValueError:
                     continue
+
                 match = old_df[old_df["Ticker"] == tk]
                 if not match.empty:
-                    comp = match.iloc[0]["Company"]
-                    sec = match.iloc[0]["Sector"]
-                    curr = match.iloc[0]["Currency"]
+                    comp = str(match["Company"].values)
+                    sec = str(match["Sector"].values)
+                    curr = str(match["Currency"].values)
                 else:
                     comp, sec, curr = get_meta(tk)
                     if raw_tk.endswith(".UK"):
                         curr = "USD" if any(x in tk for x in ["ISLN", "EGLN", "SGLD", "COPX"]) else "GBP"
+
                 open_rows.append({
-                    "Ticker": tk, "Company": comp, "Sector": sec,
-                    "Shares": vol, "Buy Price": buy_p, "Current Price": buy_p,
-                    "Currency": curr, "Dividends EUR": round(max(divs_eur.get(tk, 0.0), 0.0), 2)
+                    "Ticker": tk,
+                    "Company": comp,
+                    "Sector": sec,
+                    "Shares": vol,
+                    "Buy Price": buy_p,
+                    "Current Price": buy_p,
+                    "Currency": curr,
+                    "Dividends EUR": round(max(divs_eur.get(tk, 0.0), 0.0), 2)
                 })
 
     if not open_rows:
         return pd.DataFrame()
+
     res_df = pd.DataFrame(open_rows)
     grouped = []
     for tk, grp in res_df.groupby("Ticker", sort=False):
@@ -71,13 +86,13 @@ def parse_xtb_report(uploaded_file, old_df):
         avg_b = (grp["Shares"] * grp["Buy Price"]).sum() / tot_sh if tot_sh > 0 else 0.0
         grouped.append({
             "Ticker": tk,
-            "Company": grp.iloc[0]["Company"],
-            "Sector": grp.iloc[0]["Sector"],
+            "Company": grp["Company"].values,
+            "Sector": grp["Sector"].values,
             "Shares": round(tot_sh, 6),
             "Buy Price": round(avg_b, 4),
             "Current Price": round(avg_b, 4),
-            "Currency": grp.iloc[0]["Currency"],
-            "Dividends EUR": grp.iloc[0]["Dividends EUR"]
+            "Currency": grp["Currency"].values,
+            "Dividends EUR": grp["Dividends EUR"].values
         })
     return pd.DataFrame(grouped)
 
@@ -188,4 +203,3 @@ if not view.empty:
     cols = ["Ticker", "Company", "Sector", "Shares", "Buy Price", "RSI", "SMA_Pct", "Current Price", "Currency", "Inv", "Mkt", "Div", "Ann_Div", "Div_Yield", "YoC", "PnL", "Ret", "Wgt"]
     disp = view[cols].copy()
     disp.columns = ["Tiker", "Companie", "Sector", "Acțiuni", "Preț mediu", "RSI (14)", "vs SMA 200 %", "Preț curent", "Monedă", "Valoare investită", "Valoare piață", "Dividende", "Dividende / an (Est.)", "Dividend %", "YoC %", "Profit / Pierdere", "Randament %", "Pondere %"]
-    fmt = dict([("Acțiuni", f_shares), ("Preț mediu", f_price), ("RSI (14)", f_rsi), ("vs SMA 200 %", f_sma), ("Preț curent", f_price), ("Valoare investită", f_num2), ("Valoare piață", f_num2), ("Dividende", f_num2), ("Dividende / an (Est.)", f_num2), ("Dividend %", f_yoc), ("YoC %", f_yoc), ("Profit / Pierdere", f_num2), ("Randament %", f_pct), ("Pondere %", f_pct)])
