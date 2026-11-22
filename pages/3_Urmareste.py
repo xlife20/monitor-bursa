@@ -13,6 +13,17 @@ st.markdown("<style>div[data-testid='stButton'] button p {font-size: 15px !impor
 for k_ss in ("w_add", "w_del"):
     if k_ss not in st.session_state: st.session_state[k_ss] = False
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def check_ticker_live(tk):
+    try:
+        hist = yf.Ticker(tk).history(period="5d")
+        if hist is None or hist.empty:
+            return False, "", "", ""
+        comp, sec, curr = get_meta(tk)
+        return True, comp, sec, curr
+    except Exception:
+        return False, "", "", ""
+
 n1, n2, n3, n4, n5 = st.columns(5)
 if n1.button("⬅️ Meniu Principal", use_container_width=True): st.switch_page("app.py")
 if n2.button("📈 Portofoliu XTB", use_container_width=True): st.switch_page("pages/1_Portofoliu_XTB.py")
@@ -46,30 +57,35 @@ h1, h2, h3 = st.columns((1.6, 4.8, 1.6))
 if h1.button("➕ Adaugă tiker", use_container_width=True): st.session_state.w_add = not st.session_state.w_add; st.session_state.w_del = False
 h2.markdown("<h1 style='text-align:center;margin:0;padding:0;'>👁️ Watchlist</h1>", unsafe_allow_html=True)
 if h3.button("🗑️ Șterge tiker", use_container_width=True): st.session_state.w_del = not st.session_state.w_del; st.session_state.w_add = False
-
 if st.session_state.w_add:
     with st.container(border=True):
-        raw_tks = st.text_input("Introdu tikere separate prin virgulă (ex: EPD, AAPL, MSFT, O):", key="w_in_tks")
+        raw_tks = st.text_input("Scrie tikerul sau tikerele separate prin virgulă (ex: EPD, AAPL, VWCE.DE) și apasă Enter:", key="w_in_tks")
+        typed_list = list(dict.fromkeys([x.strip().upper() for x in raw_tks.split(",") if x.strip()]))
+        ex_set = set(df["Ticker"].astype(str).str.upper().tolist())
+        if typed_list:
+            for tk in typed_list:
+                if tk in ex_set:
+                    st.warning(f"⚠️ **{tk}** există deja în Watchlist.")
+                else:
+                    found, comp, sec, curr = check_ticker_live(tk)
+                    if found:
+                        st.success(f"✅ Recunoscut: **{tk}** — {comp} ({sec} • {curr})")
+                    else:
+                        st.error(f"❌ Nerecunscut pe bursă: **{tk}** (verifică simbolul sau sufixul, ex: `.DE`, `.L`, `.MC`)")
+
         if st.button("Salvează tikerele", type="primary"):
-            new_list = [x.strip().upper() for x in raw_tks.split(",") if x.strip()]
-            if not new_list:
+            if not typed_list:
                 st.error("❌ Nu ai introdus niciun simbol. Scrie cel puțin un tiker și apasă pe Salvează tikerele.")
             else:
-                ex_set = set(df["Ticker"].astype(str).str.upper().tolist())
                 added, errs = [], []
-                for tk in new_list:
+                for tk in typed_list:
                     if tk in ex_set:
                         errs.append(f"'{tk}' există deja în Watchlist")
                         continue
-                    try:
-                        hist = yf.Ticker(tk).history(period="5d")
-                        if hist is None or hist.empty:
-                            errs.append(f"'{tk}' nu a fost găsit pe bursă (verifică simbolul sau sufixul, ex: .DE, .L)")
-                            continue
-                    except Exception:
-                        errs.append(f"'{tk}' nu a putut fi verificat pe Yahoo Finance")
+                    found, comp, sec, curr = check_ticker_live(tk)
+                    if not found:
+                        errs.append(f"'{tk}' nu a fost recunoscut pe bursă")
                         continue
-                    comp, sec, curr = get_meta(tk)
                     added.append({"Ticker": tk, "Company": comp, "Sector": sec, t_col: xtb_avg.get(tk, 0.0), "Currency": curr})
                     ex_set.add(tk)
                 if added:
@@ -85,6 +101,7 @@ if st.session_state.w_add:
                     st.session_state.w_add = False; st.cache_data.clear(); st.rerun()
                 else:
                     st.error(f"❌ Nu s-a putut adăuga nimic — Motiv: {'; '.join(errs)}.")
+
 if st.session_state.w_del:
     with st.container(border=True):
         tks_del = df["Ticker"].astype(str).tolist() if not df.empty else []
