@@ -20,7 +20,7 @@ def to_num(val):
     except ValueError: return None
 
 def load_stats():
-    d = {"xtb_cash": 164.59, "xtb_closed_pnl": 186.81, "xtb_closed_divs": 18.24, "xtb_dep": 3151.0, "xtb_with": 376.0, "krk_cash": 0.0}
+    d = {"xtb_cash": 164.22, "xtb_closed_pnl": 186.81, "xtb_closed_divs": 23.99, "xtb_dep": 3151.0, "xtb_with": 376.0, "xtb_mkt_ov": 2856.71, "xtb_unr_ov": -57.64, "krk_cash": 0.0}
     if STATS_CSV.exists():
         try:
             for _, r in pd.read_csv(STATS_CSV).iterrows():
@@ -32,6 +32,7 @@ def save_stats(d): return save_csv_permanent(pd.DataFrame([{"key": k, "val": rou
 
 def parse_xtb_files(files_list, old_df):
     divs, open_rows, tot_cpnl, tot_ff, has_ff, tot_dep, tot_with = {}, [], 0.0, 0.0, False, 0.0, 0.0
+    ov_mkt, ov_unr, has_ov = 0.0, 0.0, False
     for up_f in files_list:
         rows = []
         if up_f.name.lower().endswith(".xlsx"):
@@ -50,6 +51,12 @@ def parse_xtb_files(files_list, old_df):
                     for nxt in r[i + 1:]:
                         v = to_num(nxt)
                         if v is not None: tot_ff += v; has_ff = True; break
+            if len(r) > 2 and "open position value" in low:
+                v = to_num(gcol(r, 2))
+                if v is not None: ov_mkt += v; has_ov = True
+            if len(r) > 2 and "open position profit" in low:
+                v = to_num(gcol(r, 2))
+                if v is not None: ov_unr += v; has_ov = True
 
             if "instrument" in low and "profit/loss" in low and "close time (utc)" in low:
                 mode = "closed"
@@ -109,7 +116,7 @@ def parse_xtb_files(files_list, old_df):
         for tk, g in pd.DataFrame(open_rows).groupby("Ticker", sort=False):
             oset.add(tk); sh = g["Shares"].sum(); ab = (g["Shares"] * g["Buy"]).sum() / sh if sh > 0 else 0.0
             out.append({"Ticker": str(tk), "Company": str(next(iter(g["Company"]))), "Sector": str(next(iter(g["Sector"]))), "Shares": round(float(sh), 6), "Buy Price": round(float(ab), 4), "Current Price": round(float(ab), 4), "Currency": str(next(iter(g["Currency"]))), "Dividends EUR": round(max(divs.get(tk, 0.0), 0.0), 2)})
-    return pd.DataFrame(out), (round(tot_ff, 2) if has_ff else None), round(tot_cpnl, 2), round(sum(max(v, 0.0) for k, v in divs.items() if k not in oset), 2), round(tot_dep, 2), round(tot_with, 2)
+    return pd.DataFrame(out), (round(tot_ff, 2) if has_ff else None), round(tot_cpnl, 2), round(sum(max(v, 0.0) for k, v in divs.items() if k not in oset), 2), round(tot_dep, 2), round(tot_with, 2), (round(ov_mkt, 2) if has_ov else None), (round(ov_unr, 2) if has_ov else None)
 def parse_krk_all(up_f):
     kdf = pd.read_csv(up_f); kdf.columns = kdf.columns.str.lower().str.strip()
     if not {"asset", "amount", "type"}.issubset(set(kdf.columns)): return pd.DataFrame(), None
@@ -147,13 +154,15 @@ with st.container(border=True):
         f_xtb = st.file_uploader("Rapoarte XTB (.xlsx sau .csv):", type=["xlsx", "csv"], accept_multiple_files=True, key="s_xtb")
         if f_xtb and st.button("Actualizează Tot XTB", type="primary"):
             old_x = pd.read_csv(XTB_CSV).fillna("") if XTB_CSV.exists() else pd.DataFrame(columns=req)
-            ndf, ff, cpnl, cdiv, dep, wth = parse_xtb_files(f_xtb, old_x)
+            ndf, ff, cpnl, cdiv, dep, wth, omkt, ounr = parse_xtb_files(f_xtb, old_x)
             if not ndf.empty: save_csv_permanent(ndf.reindex(columns=req), XTB_CSV)
             if ff is not None: stats["xtb_cash"] = ff
             if cpnl != 0: stats["xtb_closed_pnl"] = cpnl
             if cdiv > 0: stats["xtb_closed_divs"] = cdiv
             if dep > 0: stats["xtb_dep"] = dep
             if wth > 0: stats["xtb_with"] = wth
+            if omkt is not None: stats["xtb_mkt_ov"] = omkt
+            if ounr is not None: stats["xtb_unr_ov"] = ounr
             save_stats(stats); st.cache_data.clear(); st.rerun()
     with u2:
         f_krk = st.file_uploader("Rapoarte Kraken Libro mayor (.csv):", type="csv", accept_multiple_files=True, key="s_krk")
@@ -175,9 +184,11 @@ def read_port(csv_p):
     tr = fx.get(tc, 1.0); mult = pd.to_numeric(df["Currency"].map(fx), errors="coerce").fillna(1.0).astype(float) / tr
     return float((df["Shares"] * df["Buy Price"] * mult).sum()), float((df["Shares"] * df["Current Price"] * mult).sum()), float((df["Dividends EUR"] * (fx.get("EUR", 1.08) / tr)).sum()), fx
 
-x_inv, x_mkt, x_odivs, fx = read_port(XTB_CSV); k_inv, k_mkt, k_earn, _ = read_port(KRK_CSV)
+_, _, x_odivs, fx = read_port(XTB_CSV); k_inv, k_mkt, k_earn, _ = read_port(KRK_CSV)
 er = fx.get("EUR", 1.08) / fx.get(tc, 1.0)
-x_cash, x_cpnl, x_tdivs, x_unr = stats["xtb_cash"] * er, stats["xtb_closed_pnl"] * er, x_odivs + stats["xtb_closed_divs"] * er, x_mkt - x_inv
+x_cash, x_cpnl, x_tdivs = stats["xtb_cash"] * er, stats["xtb_closed_pnl"] * er, x_odivs + stats["xtb_closed_divs"] * er
+x_mkt, x_unr = stats["xtb_mkt_ov"] * er, stats["xtb_unr_ov"] * er
+x_inv = x_mkt - x_unr
 x_dep, x_with = stats["xtb_dep"] * er, stats["xtb_with"] * er
 x_net_dep = x_dep - x_with
 x_reinv = max(x_inv - x_net_dep, 0.0)
@@ -188,17 +199,17 @@ k_cash, k_prof = stats["krk_cash"] * er, (k_mkt - k_inv) + k_earn
 
 st.subheader(f"📈 Portofoliu XTB — Reconciliere Completă ({tc})")
 cols_info = [
-    ("1. Total<br>Depus", f"{x_dep:,.2f}", "Toate depunerile efectuate în contul XTB"),
-    ("2. Total<br>Retras", f"-{x_with:,.2f}", "Bani scoși deja din contul XTB în bancă"),
-    ("3. Capital<br>Net", f"{x_net_dep:,.2f}", "Depuneri minus retrageri (banii tăi rămași activi)"),
+    ("1. Total<br>Depus", f"{x_dep:,.2f}", "Toate depunerile efectuate în contul XTB (3.151,00 EUR)"),
+    ("2. Total<br>Retras", f"-{x_with:,.2f}", "Bani scoși deja din contul XTB în bancă (376,00 EUR)"),
+    ("3. Capital<br>Net", f"{x_net_dep:,.2f}", "Depuneri minus retrageri (2.775,00 EUR banii tăi activi)"),
     ("4. Profit<br>Vânzări", f"{x_cpnl:+,.2f}", "Diferența netă dintre prețul de vânzare și cost (poziții închise)"),
-    ("5. Dividende<br>Nete", f"+{x_tdivs:,.2f}", "Dividende încasate după impozite"),
+    ("5. Dividende<br>& Dobânzi", f"+{x_tdivs:,.2f}", "Dividende nete încasate + dobânda la fondurile libere"),
     ("6. Profit<br>Reinvestit", f"+{x_reinv:,.2f}", "Câștig din vânzări și dividende folosit pentru a cumpăra acțiuni noi"),
-    ("7. Cash<br>Nealocat", f"{x_cash:,.2f}", "Bani lichizi disponibili în cont (Fonduri libere)"),
+    ("7. Fonduri<br>Libere", f"{x_cash:,.2f}", "Suma nealocată (Cash lichid disponibil în contul XTB)"),
     ("8. Investit<br>Activ", f"{x_inv:,.2f}", "Costul de achiziție al acțiunilor deținute (Capital Net + Reinvestit)"),
-    ("9. Valoare<br>Piață", f"{x_mkt:,.2f}", f"Valoarea actuală a acțiunilor/ETF-urilor (Evoluție deschise: {x_unr:+,.2f} {tc})"),
-    ("10. Sold<br>Cont XTB", f"{x_val_cont:,.2f}", "Valoare Piață + Cash Nealocat"),
-    ("11. Total +<br>Retrageri", f"{x_val_tot_cu_retr:,.2f}", "Sold Cont XTB + Total Retras în bancă"),
+    ("9. Valoare<br>Piață", f"{x_mkt:,.2f}", f"Valoarea actuală a acțiunilor/ETF-urilor (Profit deschise: {x_unr:+,.2f} {tc})"),
+    ("10. Valoare<br>Cont XTB", f"{x_val_cont:,.2f}", "Valoare Piață + Fonduri Libere (exact soldul afișat în XTB)"),
+    ("11. Total +<br>Retrageri", f"{x_val_tot_cu_retr:,.2f}", "Valoare Cont XTB + Total Retras în bancă"),
     ("12. PROFIT<br>NET REAL", f"{x_net_real:+,.2f}", f"Total + Retrageri ({x_val_tot_cu_retr:,.2f}) minus Total Depus ({x_dep:,.2f})")
 ]
 ths = "".join([f"<th title='{tip}' style='border:1px solid #333;padding:6px 4px;text-align:center;font-weight:bold;background:#1e222d;color:#fff;font-size:12px;line-height:1.25;cursor:help;'>{lbl}</th>" for lbl, _, tip in cols_info])
