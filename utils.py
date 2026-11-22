@@ -7,8 +7,12 @@ import base64, json, urllib.request
 from pathlib import Path
 
 def enable_auto_refresh(sec=60):
-    on = st.sidebar.toggle("🔄 Auto-Refresh 1 min", value=True, key="auto_ref_1m")
-    st.sidebar.caption(f"Ultima actualizare: {pd.Timestamp.now(tz='Europe/Madrid').strftime('%H:%M:%S')}")
+    now_s = pd.Timestamp.now(tz="Europe/Madrid").strftime("%H:%M:%S")
+    if st.session_state.get("_ar_drawn") == now_s:
+        return
+    st.session_state["_ar_drawn"] = now_s
+    on = st.sidebar.toggle("🔄 Auto-Refresh 1 min", value=True, key=f"ar_tg_{now_s}")
+    st.sidebar.caption(f"Ultima actualizare: {now_s}")
     if on:
         components.html(f"<script>setTimeout(function(){{window.parent.location.reload();}}, {sec * 1000});</script>", height=0, width=0)
 
@@ -106,9 +110,7 @@ def _fetch_cached(tks_tuple, curr_tuple):
     return prices, changes, rsim, smam, fx
 
 def fetch_data(tickers, currencies):
-    if not st.session_state.get("_ar_init"):
-        st.session_state["_ar_init"] = True
-        enable_auto_refresh(60)
+    enable_auto_refresh(60)
     return _fetch_cached(tuple(tickers), tuple(currencies))
 
 @st.cache_data(ttl=86400, show_spinner=False)
