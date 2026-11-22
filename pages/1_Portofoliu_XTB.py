@@ -2,13 +2,13 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from utils import save_csv_permanent, fetch_data, fetch_annual_dividends, c_pnl, c_rsi, f_price, f_shares, f_num2, f_rsi, f_sma, f_pct, clean_table, quick_del
+from utils import save_csv_permanent, fetch_data, fetch_annual_dividends, c_pnl, c_rsi, f_price, f_shares, f_num2, f_rsi, f_sma, f_pct, clean_table, compact_col_cfg, quick_del
 
 st.set_page_config(page_title="Portofoliu XTB", layout="wide")
 BASE = Path(__file__).resolve().parent.parent
 CSV_PATH, STATS_CSV = BASE / "portfolio.csv", BASE / "summary_stats.csv"
 
-st.markdown("<style>div[data-testid='stButton'] button p {font-size: 16px !important; font-weight: 700 !important;}</style>", unsafe_allow_html=True)
+st.markdown("<style>div[data-testid='stButton'] button p {font-size: 15px !important; font-weight: 700 !important;}</style>", unsafe_allow_html=True)
 
 n1, n2, n3, n4, n5 = st.columns(5)
 if n1.button("⬅️ Meniu Principal", use_container_width=True): st.switch_page("app.py")
@@ -91,10 +91,10 @@ fyoc = lambda x: "" if (pd.isna(x) or x == "" or float(x) <= 0) else f"{float(x)
 if not v.empty:
     cols = ["Ticker", "Company", "Sector", "Shares", "Buy Price", "RSI", "SMA_Pct", "Current Price", "Currency", "Inv", "Mkt", "Div", "Ann_Div", "Div_Y", "YoC", "PnL", "Ret", "Wgt"]
     disp = v.reindex(columns=cols).copy()
-    disp.columns = ["Tiker", "Companie", "Sector", "Acțiuni", "Preț mediu", "RSI (14)", "vs SMA 200 %", "Preț curent", "Monedă", "Valoare investită", "Valoare piață", "Dividende", "Dividende / an (Est.)", "Dividend %", "YoC %", "Profit / Pierdere", "Randament %", "Pondere %"]
-    fmt = {"Acțiuni": f_shares, "Preț mediu": f_price, "RSI (14)": f_rsi, "vs SMA 200 %": f_sma, "Preț curent": f_price, "Valoare investită": f_num2, "Valoare piață": f_num2, "Dividende": f_num2, "Dividende / an (Est.)": f_num2, "Dividend %": fyoc, "YoC %": fyoc, "Profit / Pierdere": f_num2, "Randament %": f_pct, "Pondere %": f_pct}
-    styler = clean_table(disp, fmt).style.map(c_pnl, subset=["Profit / Pierdere", "Randament %", "vs SMA 200 %"]).map(c_rsi, subset=["RSI (14)"])
-    st.dataframe(styler, use_container_width=True, hide_index=True, height=550, column_config={"Tiker": st.column_config.TextColumn("Tiker", pinned=True)})
+    disp.columns = ["Tiker", "Companie", "Sector", "Acțiuni", "Preț\nmediu", "RSI\n(14)", "vs SMA\n200 %", "Preț\ncurent", "Mon.", "Valoare\ninvestită", "Valoare\npiață", "Divid.", "Divid. /\nan (Est.)", "Div.\n%", "YoC\n%", "Profit /\nPierdere", "Rand.\n%", "Pond.\n%"]
+    fmt = {"Acțiuni": f_shares, "Preț\nmediu": f_price, "RSI\n(14)": f_rsi, "vs SMA\n200 %": f_sma, "Preț\ncurent": f_price, "Valoare\ninvestită": f_num2, "Valoare\npiață": f_num2, "Divid.": f_num2, "Divid. /\nan (Est.)": f_num2, "Div.\n%": fyoc, "YoC\n%": fyoc, "Profit /\nPierdere": f_num2, "Rand.\n%": f_pct, "Pond.\n%": f_pct}
+    styler = clean_table(disp, fmt).style.map(c_pnl, subset=["Profit /\nPierdere", "Rand.\n%", "vs SMA\n200 %"]).map(c_rsi, subset=["RSI\n(14)"])
+    st.dataframe(styler, use_container_width=True, hide_index=True, height=560, column_config=compact_col_cfg(disp.columns))
     quick_del(df, req, CSV_PATH, "xtb")
     l1, r1 = st.columns(2)
     with l1:
