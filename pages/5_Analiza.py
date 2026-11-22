@@ -168,7 +168,8 @@ if all_tks:
     def_idx = opts.index(clicked_tk) if (clicked_tk and clicked_tk in opts) else 0
     sel_info = st.selectbox("🏢 Detalii companie (dă clic pe un rând din tabel sau alege din listă):", opts, index=def_idx, key="an_info_sel")
     target_tk = clicked_tk or (sel_info if sel_info != "Alege un tiker..." else None)
-        if target_tk:
+    if target_tk:
         _, r_m = next(v_sorted[v_sorted["Ticker"].astype(str) == target_tk].iterrows())
         ok_i, det_i = get_company_details_ro(target_tk, str(r_m["Company"]), str(r_m["Sector"]), str(r_m["Currency"]), r_m["Low_52W"], r_m["High_52W"], str(r_m["PE_Ratio"] or "-"))
-        if ok_i: render_company_card(det_i)
+        if ok_i:
+            render_company_card(det_i)
