@@ -2,7 +2,8 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import yfinance as yf
-import json, re, urllib.request, urllib.parse
+import re, urllib.request
+from deep_translator import GoogleTranslator
 from pathlib import Path
 from utils import get_meta, fetch_data, fetch_annual_dividends, fetch_fundamentals, c_pnl, c_rsi, f_price, f_rsi, f_sma, f_pct, clean_table
 
@@ -17,23 +18,13 @@ if "an_flt" not in st.session_state: st.session_state.an_flt = "rsi"
 def tr_ro(txt):
     s = str(txt or "").strip()
     if not s or s == "-": return s
-    chunks = [s[i:i+450] for i in range(0, min(len(s), 1800), 450)]
-    out_parts = []
-    for ch in chunks:
-        try:
-            q = urllib.parse.quote(ch)
-            url = f"https://translated.net{q}&langpair=en|ro"
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=8) as r:
-                data = json.loads(r.read().decode("utf-8"))
-                t_txt = data.get("responseData", {}).get("translatedText", "")
-                if t_txt and "MYMEMORY WARNING" not in t_txt.upper():
-                    out_parts.append(t_txt)
-                else:
-                    out_parts.append(ch)
-        except Exception:
-            out_parts.append(ch)
-    return " ".join(out_parts).strip() or s
+    try:
+        tr = GoogleTranslator(source="auto", target="ro")
+        chunks = [s[i:i+4000] for i in range(0, min(len(s), 8000), 4000)]
+        out = " ".join([tr.translate(c) or c for c in chunks]).strip()
+        return out if out else s
+    except Exception:
+        return s
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_company_details_ro(tk, fallback_name="", fallback_sec="", fallback_curr="USD", lo52=None, hi52=None, pe_val="-"):
@@ -178,6 +169,6 @@ if all_tks:
     sel_info = st.selectbox("🏢 Detalii companie (dă clic pe un rând din tabel sau alege din listă):", opts, index=def_idx, key="an_info_sel")
     target_tk = clicked_tk or (sel_info if sel_info != "Alege un tiker..." else None)
     if target_tk:
-        r_m = v_sorted[v_sorted["Ticker"].astype(str) == target_tk].iloc[0]
+        r_m = v_sorted[v_sorted["Ticker"].astype(str) == target_tk].iloc
         ok_i, det_i = get_company_details_ro(target_tk, str(r_m["Company"]), str(r_m["Sector"]), str(r_m["Currency"]), r_m["Low_52W"], r_m["High_52W"], str(r_m["PE_Ratio"] or "-"))
         if ok_i: render_company_card(det_i)
