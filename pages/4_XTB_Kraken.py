@@ -20,7 +20,7 @@ def to_num(val):
     except ValueError: return None
 
 def load_stats():
-    d = {"xtb_cash": 164.59, "xtb_closed_pnl": 186.81, "xtb_closed_divs": 18.24, "krk_cash": 0.0}
+    d = {"xtb_cash": 164.22, "xtb_closed_pnl": 186.81, "xtb_closed_divs": 18.24, "xtb_dep": 3151.0, "xtb_with": 376.0, "krk_cash": 0.0}
     if STATS_CSV.exists():
         try:
             for _, r in pd.read_csv(STATS_CSV).iterrows():
@@ -31,7 +31,7 @@ def load_stats():
 def save_stats(d): return save_csv_permanent(pd.DataFrame([{"key": k, "val": round(float(v), 4)} for k, v in d.items()]), STATS_CSV)
 
 def parse_xtb_files(files_list, old_df):
-    divs, open_rows, tot_cpnl, tot_ff, has_ff = {}, [], 0.0, 0.0, False
+    divs, open_rows, tot_cpnl, tot_ff, has_ff, tot_dep, tot_with = {}, [], 0.0, 0.0, False, 0.0, 0.0
     for up_f in files_list:
         rows = []
         if up_f.name.lower().endswith(".xlsx"):
@@ -85,7 +85,10 @@ def parse_xtb_files(files_list, old_df):
                     if v is not None: tot_ff += v; has_ff = True
                     mode = ""; continue
                 ot, amt, tk = gcol(r, yidx).lower(), to_num(gcol(r, aidx)), clean_tk(gcol(r, tidx))
-                if amt is not None and tk and any(k in ot for k in ("dividend", "withholding")): divs[tk] = divs.get(tk, 0.0) + amt
+                if amt is None: continue
+                if ot in ("deposit", "depósito", "deposito") and amt > 0: tot_dep += amt
+                elif ot in ("withdrawal", "retirada", "retragere"): tot_with += abs(amt)
+                elif tk and any(k in ot for k in ("dividend", "withholding")): divs[tk] = divs.get(tk, 0.0) + amt
             elif mode == "open":
                 if c0 in ("account number", "total", "note"): mode = ""; continue
                 if gcol(r, 0) in ("My Trades", "Investment Plan", "Investment Plans") and gcol(r, 3) != "":
@@ -106,7 +109,7 @@ def parse_xtb_files(files_list, old_df):
         for tk, g in pd.DataFrame(open_rows).groupby("Ticker", sort=False):
             oset.add(tk); sh = g["Shares"].sum(); ab = (g["Shares"] * g["Buy"]).sum() / sh if sh > 0 else 0.0
             out.append({"Ticker": str(tk), "Company": str(next(iter(g["Company"]))), "Sector": str(next(iter(g["Sector"]))), "Shares": round(float(sh), 6), "Buy Price": round(float(ab), 4), "Current Price": round(float(ab), 4), "Currency": str(next(iter(g["Currency"]))), "Dividends EUR": round(max(divs.get(tk, 0.0), 0.0), 2)})
-    return pd.DataFrame(out), (round(tot_ff, 2) if has_ff else None), round(tot_cpnl, 2), round(sum(max(v, 0.0) for k, v in divs.items() if k not in oset), 2)
+    return pd.DataFrame(out), (round(tot_ff, 2) if has_ff else None), round(tot_cpnl, 2), round(sum(max(v, 0.0) for k, v in divs.items() if k not in oset), 2), round(tot_dep, 2), round(tot_with, 2)
 def parse_krk_all(up_f):
     kdf = pd.read_csv(up_f); kdf.columns = kdf.columns.str.lower().str.strip()
     if not {"asset", "amount", "type"}.issubset(set(kdf.columns)): return pd.DataFrame(), None
@@ -127,7 +130,7 @@ def parse_krk_all(up_f):
             cr, fr = g[~g["norm"].isin({"EUR", "USD", "GBP"}) & g["type"].isin(("trade", "spend", "receive"))], g[g["norm"].isin({"EUR", "USD", "GBP"}) & g["type"].isin(("trade", "spend", "receive"))]
             if not cr.empty and not fr.empty and float(cr["amount"].sum()) > 0:
                 ca = str(next(iter(cr["norm"]))); cost[ca] = cost.get(ca, 0.0) + abs(float(fr["amount"].sum())) + float(fr["fee"].sum())
-    rows = [{"Ticker": f"{a}-EUR", "Company": get_meta(f"{a}-EUR")[0], "Sector": "Crypto", "Shares": round(sh, 8), "Buy Price": round((cost.get(a, 0.0) / sh) if cost.get(a, 0.0) > 0 else 0.0, 4), "Current Price": round((cost.get(a, 0.0) / sh) if cost.get(a, 0.0) > 0 else 0.0, 4), "Currency": "EUR", "Dividends EUR": round(rew.get(a, 0.0), 4)} for a, sh in hold.items() if sh > 1e-7]
+    rows = [{"Ticker": f"{a}-EUR", "Company": get_meta(f"{a}-EUR"), "Sector": "Crypto", "Shares": round(sh, 8), "Buy Price": round((cost.get(a, 0.0) / sh) if cost.get(a, 0.0) > 0 else 0.0, 4), "Current Price": round((cost.get(a, 0.0) / sh) if cost.get(a, 0.0) > 0 else 0.0, 4), "Currency": "EUR", "Dividends EUR": round(rew.get(a, 0.0), 4)} for a, sh in hold.items() if sh > 1e-7]
     er = kdf[kdf["norm"] == "EUR"]
     return pd.DataFrame(rows), (round(float((er["amount"] - er["fee"]).sum()), 2) if not er.empty else None)
 
@@ -144,11 +147,13 @@ with st.container(border=True):
         f_xtb = st.file_uploader("Rapoarte XTB (.xlsx sau .csv):", type=["xlsx", "csv"], accept_multiple_files=True, key="s_xtb")
         if f_xtb and st.button("Actualizează Tot XTB", type="primary"):
             old_x = pd.read_csv(XTB_CSV).fillna("") if XTB_CSV.exists() else pd.DataFrame(columns=req)
-            ndf, ff, cpnl, cdiv = parse_xtb_files(f_xtb, old_x)
+            ndf, ff, cpnl, cdiv, dep, wth = parse_xtb_files(f_xtb, old_x)
             if not ndf.empty: save_csv_permanent(ndf.reindex(columns=req), XTB_CSV)
             if ff is not None: stats["xtb_cash"] = ff
             if cpnl != 0: stats["xtb_closed_pnl"] = cpnl
             if cdiv > 0: stats["xtb_closed_divs"] = cdiv
+            if dep > 0: stats["xtb_dep"] = dep
+            if wth > 0: stats["xtb_with"] = wth
             save_stats(stats); st.cache_data.clear(); st.rerun()
     with u2:
         f_krk = st.file_uploader("Rapoarte Kraken Libro mayor (.csv):", type="csv", accept_multiple_files=True, key="s_krk")
@@ -173,9 +178,16 @@ def read_port(csv_p):
 x_inv, x_mkt, x_odivs, fx = read_port(XTB_CSV); k_inv, k_mkt, k_earn, _ = read_port(KRK_CSV)
 er = fx.get("EUR", 1.08) / fx.get(tc, 1.0)
 x_cash, x_cpnl, x_tdivs, x_unr = stats["xtb_cash"] * er, stats["xtb_closed_pnl"] * er, x_odivs + stats["xtb_closed_divs"] * er, x_mkt - x_inv
+x_dep, x_with = stats["xtb_dep"] * er, stats["xtb_with"] * er
 x_net, k_cash, k_prof = x_unr + x_cpnl + x_tdivs, stats["krk_cash"] * er, (k_mkt - k_inv) + k_earn
 
 st.subheader("📈 Portofoliu XTB")
+d1, d2, d3, d4 = st.columns(4)
+d1.metric("Total Depus XTB", f"{x_dep:,.2f} {tc}")
+d2.metric("Total Retras XTB", f"-{x_with:,.2f} {tc}")
+d3.metric("Capital Net Depus", f"{(x_dep - x_with):,.2f} {tc}")
+d4.metric("Valoare Totală Cont XTB", f"{(x_mkt + x_cash):,.2f} {tc}", f"Profit real vs depus: {((x_mkt + x_cash) - (x_dep - x_with)):+,.2f} {tc}")
+
 x1, x2, x3, x4, x5 = st.columns(5)
 x1.metric("Suma investită (Activă)", f"{x_inv:,.2f} {tc}", f"Piață: {x_mkt:,.2f} {tc}")
 x2.metric("Suma nealocată (Cash)", f"{x_cash:,.2f} {tc}")
