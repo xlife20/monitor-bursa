@@ -177,6 +177,18 @@ def clean_table(df, fmt_map):
             out[col] = out[col].apply(fn)
     return out
 
+def compact_col_cfg(cols):
+    st.markdown("<style>div[data-testid='stDataFrame'] [role='columnheader'] {white-space: pre-line !important; text-align: center !important; line-height: 1.15 !important; font-size: 12px !important;}</style>", unsafe_allow_html=True)
+    cfg = {}
+    for c in cols:
+        if c == "Tiker":
+            cfg[c] = st.column_config.TextColumn(c, pinned=True, width="small")
+        elif c in ("Companie", "Monedă / Activ"):
+            cfg[c] = st.column_config.TextColumn(c, width="medium")
+        else:
+            cfg[c] = st.column_config.TextColumn(c, width="small")
+    return cfg
+
 def quick_del(df, req_cols, csv_path, key_prefix):
     with st.expander("🗑️ Șterge o poziție rapid", expanded=False):
         tks = df["Ticker"].astype(str).tolist() if not df.empty else []
