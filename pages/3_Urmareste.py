@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import yfinance as yf
 from pathlib import Path
 from utils import save_csv_permanent, get_meta, fetch_data, fetch_annual_dividends, c_pnl, c_rsi, f_price, f_rsi, f_sma, f_pct, clean_table
 
@@ -48,29 +49,42 @@ if h3.button("🗑️ Șterge tiker", use_container_width=True): st.session_stat
 
 if st.session_state.w_add:
     with st.container(border=True):
-        raw_tks = st.text_input("Introdu tikere separate prin virgulă (ex: AAPL, MSFT, O, SCHD):", key="w_in_tks")
+        raw_tks = st.text_input("Introdu tikere separate prin virgulă (ex: EPD, AAPL, MSFT, O):", key="w_in_tks")
         if st.button("Salvează tikerele", type="primary"):
             new_list = [x.strip().upper() for x in raw_tks.split(",") if x.strip()]
             if not new_list:
-                st.error("❌ Introdu cel puțin un tiker valid înainte de a salva!")
+                st.error("❌ Nu ai introdus niciun simbol. Scrie cel puțin un tiker și apasă pe Salvează tikerele.")
             else:
                 ex_set = set(df["Ticker"].astype(str).str.upper().tolist())
-                added, dup = [], []
+                added, errs = [], []
                 for tk in new_list:
                     if tk in ex_set:
-                        dup.append(tk)
-                    else:
-                        comp, sec, curr = get_meta(tk)
-                        added.append({"Ticker": tk, "Company": comp, "Sector": sec, t_col: xtb_avg.get(tk, 0.0), "Currency": curr})
-                        ex_set.add(tk)
+                        errs.append(f"'{tk}' există deja în Watchlist")
+                        continue
+                    try:
+                        hist = yf.Ticker(tk).history(period="5d")
+                        if hist is None or hist.empty:
+                            errs.append(f"'{tk}' nu a fost găsit pe bursă (verifică simbolul sau sufixul, ex: .DE, .L)")
+                            continue
+                    except Exception:
+                        errs.append(f"'{tk}' nu a putut fi verificat pe Yahoo Finance")
+                        continue
+                    comp, sec, curr = get_meta(tk)
+                    added.append({"Ticker": tk, "Company": comp, "Sector": sec, t_col: xtb_avg.get(tk, 0.0), "Currency": curr})
+                    ex_set.add(tk)
                 if added:
                     ndf = pd.concat([df.reindex(columns=req), pd.DataFrame(added)], ignore_index=True)
                     ok = save_csv_permanent(ndf, CSV_PATH)
                     tks_str = ", ".join([x["Ticker"] for x in added])
-                    st.session_state.w_msg = ("ok" if ok else "err", f"✅ Adăugat în Watchlist (GitHub): {tks_str}" if ok else f"❌ Eroare la salvarea pe GitHub pentru: {tks_str}")
+                    if ok:
+                        msg = f"✅ Adăugat în Watchlist (salvat pe GitHub): {tks_str}"
+                        if errs: msg += f" | ⚠️ Ignorate: {'; '.join(errs)}"
+                        st.session_state.w_msg = ("ok", msg)
+                    else:
+                        st.session_state.w_msg = ("err", f"❌ Eroare la salvarea pe GitHub pentru: {tks_str} (verifică GITHUB_TOKEN / GITHUB_REPO în Secrets)")
                     st.session_state.w_add = False; st.cache_data.clear(); st.rerun()
                 else:
-                    st.error(f"❌ Tikerul/tikerele există deja în Watchlist: {', '.join(dup)}")
+                    st.error(f"❌ Nu s-a putut adăuga nimic — Motiv: {'; '.join(errs)}.")
 if st.session_state.w_del:
     with st.container(border=True):
         tks_del = df["Ticker"].astype(str).tolist() if not df.empty else []
