@@ -14,6 +14,17 @@ STATS_CSV = BASE / "summary_stats.csv"
 def gcol(r, i):
     return str(list(r)[i]).strip() if len(r) > i else ""
 
+def to_num(val):
+    s = str(val).strip().replace(" ", "").replace("€", "").replace("$", "")
+    if "," in s and "." in s:
+        s = s.replace(",", "") if s.rfind(".") > s.rfind(",") else s.replace(".", "").replace(",", ".")
+    elif "," in s:
+        s = s.replace(",", ".")
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
 def load_stats():
     defs = {"xtb_cash": 164.22, "xtb_closed_pnl": 0.0, "xtb_closed_divs": 18.24, "krk_cash": 0.0}
     if STATS_CSV.exists():
@@ -47,39 +58,71 @@ def parse_xtb_any(up_f):
 
     mode = ""
     pnl_idx = -1
+    tk_idx = 2
+    amt_idx = 5
+    type_idx = 0
+
     for r in rows_all:
         if not r or all(x == "" for x in r): continue
-        c0, c1, c2, c5 = gcol(r, 0), gcol(r, 1), gcol(r, 2), gcol(r, 5)
-        low_row = [x.lower() for x in r]
+        low = [x.lower() for x in r]
 
-        if "free funds" in c0.lower() and c1:
-            try: free_funds = float(c1.replace(",", ""))
-            except ValueError: pass
-        if "close time" in low_row and ("gross p/l" in low_row or "profit/loss" in low_row or "net p/l" in low_row):
+        # 1. Cautam Free funds / Fondos libres oriunde pe rand
+        for idx, cell in enumerate(low):
+            if any(k in cell for k in ("free funds", "fondos libres", "saldo libre", "margen libre")):
+                for nxt in r[idx + 1:]:
+                    v = to_num(nxt)
+                    if v is not None:
+                        free_funds = v
+                        break
+
+        # 2. Detectam antete de tabele (Spaniola + Engleza)
+        if any(k in low for k in ("hora de cierre", "close time")) and any(k in low for k in ("beneficio bruto", "beneficio neto", "beneficio/pérdida", "gross p/l", "net p/l", "profit/loss")):
             mode = "closed"
-            for idx, col_n in enumerate(low_row):
-                if col_n in ("gross p/l", "net p/l", "profit/loss"):
+            pnl_idx = -1
+            for idx, col_n in enumerate(low):
+                if col_n in ("beneficio neto", "net p/l", "beneficio bruto", "gross p/l", "beneficio/pérdida", "profit/loss"):
                     pnl_idx = idx
+                    break
             continue
-        if c0 == "Product" and "open price" in low_row:
-            mode = "open"; continue
-        if c0 == "Type" and "amount" in low_row:
-            mode = "cash"; continue
-        if c0 in ("Total", "Account number", "Note"):
+
+        if any(k in low for k in ("precio de apertura", "open price")) and any(k in low for k in ("producto", "product")):
+            mode = "open"
+            for idx, col_n in enumerate(low):
+                if col_n in ("símbolo", "simbolo", "ticker"): tk_idx = idx
+            continue
+
+        if any(k in low for k in ("tipo", "type")) and any(k in low for k in ("importe", "cantidad", "amount")) and any(k in low for k in ("comentario", "comment", "hora", "time")):
+            mode = "cash"
+            for idx, col_n in enumerate(low):
+                if col_n in ("tipo", "type"): type_idx = idx
+                elif col_n in ("símbolo", "simbolo", "ticker", "instrumento", "instrument"): tk_idx = idx
+                elif col_n in ("importe", "amount"): amt_idx = idx
+            continue
+
+        if gcol(r, 0).lower() in ("total", "número de cuenta", "account number", "nota", "note"):
             mode = ""; continue
 
-        if mode == "closed" and c0 in ("My Trades", "Investment Plan") and pnl_idx >= 0:
-            try: closed_pnl += float(gcol(r, pnl_idx).replace(",", ""))
-            except ValueError: pass
-        elif mode == "open" and c0 in ("My Trades", "Investment Plan") and c2:
-            open_tks.add(c2.replace(".US", "").replace(".UK", ".L").replace(".ES", ".MC").replace(".IT", ".MI"))
-        elif mode == "cash" and c2:
-            tk = c2.replace(".US", "").replace(".UK", ".L").replace(".ES", ".MC").replace(".IT", ".MI")
-            try: amt = float(c5.replace(",", ""))
-            except ValueError: continue
-            if c0.lower() == "close trade" and pnl_idx < 0:
+        # 3. Procesam randurile in functie de sectiune
+        if mode == "closed" and pnl_idx >= 0:
+            first_c = gcol(r, 0).lower()
+            if first_c not in ("", "total", "producto", "product") and not first_c.startswith("total"):
+                v = to_num(gcol(r, pnl_idx))
+                if v is not None: closed_pnl += v
+
+        elif mode == "open":
+            tk_raw = gcol(r, tk_idx)
+            if tk_raw and "." in tk_raw:
+                open_tks.add(tk_raw.replace(".US", "").replace(".UK", ".L").replace(".ES", ".MC").replace(".IT", ".MI"))
+
+        elif mode == "cash":
+            op_t = gcol(r, type_idx).lower()
+            tk_raw = gcol(r, tk_idx)
+            amt = to_num(gcol(r, amt_idx))
+            if amt is None: continue
+            tk = tk_raw.replace(".US", "").replace(".UK", ".L").replace(".ES", ".MC").replace(".IT", ".MI")
+            if op_t in ("close trade", "cierre de operación", "cierre de operacion") and pnl_idx < 0:
                 closed_pnl += amt
-            elif c0 in ("Dividend", "Withholding tax") and tk not in open_tks:
+            elif any(k in op_t for k in ("dividend", "dividendo", "withholding", "retención", "retencion")) and tk and tk not in open_tks:
                 closed_divs += amt
 
     return free_funds, round(closed_pnl, 2), round(max(closed_divs, 0.0), 2)
@@ -115,7 +158,7 @@ with st.expander("📥 Actualizează automat sumele nealocate și pozițiile în
             stats["xtb_closed_pnl"] = cpnl
             stats["xtb_closed_divs"] = cdiv
             ok = save_stats(stats)
-            st.success("Date XTB actualizate permanent!" if ok else "Date XTB actualizate!")
+            st.success(f"Extrase: Vânzări {cpnl:+.2f} EUR, Dividende închise {cdiv:.2f} EUR!" + (" (Salvat permanent)" if ok else ""))
             st.rerun()
     with col_u2:
         f_krk = st.file_uploader("Raport CSV Kraken Libro mayor (pentru Cash EUR):", type="csv", key="s_krk")
@@ -175,23 +218,3 @@ k1, k2, k3, k4 = st.columns(4)
 k1.metric("Suma investită", f"{k_inv:,.2f} {tc}", f"Piață: {k_mkt:,.2f} {tc}")
 k2.metric("Suma nealocată (Cash)", f"{k_cash:,.2f} {tc}")
 k3.metric("Câștig din Earn", f"+{k_earn:,.4f} {tc}")
-k4.metric("Profit actualizat Kraken", f"{k_profit_live:+,.2f} {tc}", f"{((k_profit_live / k_inv * 100) if k_inv > 0 else 0.0):+.2f}%")
-
-st.divider()
-st.subheader("🌐 Total General (XTB + Kraken)")
-g1, g2, g3, g4 = st.columns(4)
-g1.metric("Total Investit", f"{(x_inv + k_inv):,.2f} {tc}")
-g2.metric("Total Cash Nealocat", f"{(x_cash + k_cash):,.2f} {tc}")
-g3.metric("Valoare Totală Conturi", f"{(x_mkt + x_cash + k_mkt + k_cash):,.2f} {tc}")
-g4.metric("Profit Net Cumulat", f"{(x_net_total + k_profit_live):+,.2f} {tc}")
-
-with st.expander("✏️ Ajustare manuală rapidă (Cash / Profit vânzări)", expanded=False):
-    c_e1, c_e2, c_e3, c_e4 = st.columns(4)
-    nx_cash = c_e1.number_input("Cash XTB (EUR)", value=float(stats["xtb_cash"]), step=1.0)
-    nx_cpnl = c_e2.number_input("Profit vânzări XTB (EUR)", value=float(stats["xtb_closed_pnl"]), step=1.0)
-    nx_cdiv = c_e3.number_input("Dividende poziții închise XTB (EUR)", value=float(stats["xtb_closed_divs"]), step=1.0)
-    nk_cash = c_e4.number_input("Cash Kraken (EUR)", value=float(stats["krk_cash"]), step=1.0)
-    if st.button("Salvează valorile manual"):
-        ok = save_stats({"xtb_cash": nx_cash, "xtb_closed_pnl": nx_cpnl, "xtb_closed_divs": nx_cdiv, "krk_cash": nk_cash})
-        st.success("Salvat permanent pe GitHub!" if ok else "Salvat local!")
-        st.rerun()
