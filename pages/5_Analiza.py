@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import yfinance as yf
-import json, urllib.request, urllib.parse
+import json, re, urllib.request, urllib.parse
 from pathlib import Path
 from utils import get_meta, fetch_data, fetch_annual_dividends, fetch_fundamentals, c_pnl, c_rsi, f_price, f_rsi, f_sma, f_pct, clean_table
 
@@ -28,32 +28,47 @@ def tr_ro(txt):
         return s
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def get_company_details_ro(tk):
-    try:
-        t_obj = yf.Ticker(tk)
-        info = t_obj.info or {}
-        comp, sec, curr = get_meta(tk)
-        uk_p = {"DGE.L", "BATS.L", "ABF.L"}
-        sc = 0.01 if tk in uk_p else 1.0
-        mcap = info.get("marketCap")
-        if mcap and mcap >= 1e9: mcap_s = f"{mcap/1e9:,.2f} mld. {curr}"
-        elif mcap and mcap >= 1e6: mcap_s = f"{mcap/1e6:,.1f} mil. {curr}"
-        else: mcap_s = "-"
-        dy = info.get("dividendYield")
-        dy_s = f"{dy*100:.2f}%" if isinstance(dy, (int, float)) and dy > 0 else "-"
-        pe = info.get("trailingPE")
-        pe_s = f"{pe:.2f}" if isinstance(pe, (int, float)) and pe > 0 else "-"
-        lo52, hi52 = info.get("fiftyTwoWeekLow"), info.get("fiftyTwoWeekHigh")
-        rng_s = f"{lo52*sc:,.2f} - {hi52*sc:,.2f} {curr}" if (lo52 and hi52) else "-"
-        raw_sum = info.get("longBusinessSummary") or "Nu există descriere disponibilă."
-        return True, {
-            "Ticker": tk, "Name": comp, "Sector": tr_ro(sec), "Currency": curr,
-            "Industry": tr_ro(info.get("industry") or "-"), "Country": tr_ro(info.get("country") or "-"),
-            "MarketCap": mcap_s, "PE": pe_s, "DivYield": dy_s, "Range52": rng_s,
-            "Summary": tr_ro(raw_sum)
-        }
-    except Exception:
-        return False, {}
+def get_company_details_ro(tk, fallback_name="", fallback_sec="", fallback_curr="USD", lo52=None, hi52=None, pe_val="-"):
+    t_obj = yf.Ticker(tk)
+    info = {}
+    try: info = t_obj.info or {}
+    except Exception: info = {}
+    comp = info.get("shortName") or info.get("longName") or fallback_name or tk
+    sec = info.get("sector") or fallback_sec or "-"
+    curr = (info.get("currency") or fallback_curr or "USD").upper()
+    ind = info.get("industry") or "-"
+    ctry = info.get("country") or "-"
+    raw_sum = info.get("longBusinessSummary") or ""
+    mcap = info.get("marketCap")
+    mcap_s = f"{mcap/1e9:,.2f} mld. {curr}" if (mcap and mcap >= 1e9) else (f"{mcap/1e6:,.1f} mil. {curr}" if (mcap and mcap >= 1e6) else "-")
+    dy = info.get("dividendYield")
+    dy_s = f"{dy*100:.2f}%" if isinstance(dy, (int, float)) and dy > 0 else "-"
+    pe = info.get("trailingPE")
+    pe_s = f"{pe:.2f}" if isinstance(pe, (int, float)) and pe > 0 else (pe_val or "-")
+
+    if not raw_sum and "." not in tk and "-" not in tk:
+        try:
+            req = urllib.request.Request(f"https://finviz.com{tk}", headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=6) as r:
+                html = r.read().decode("utf-8", errors="ignore")
+                m_sum = re.search(r'class="fullview-profile"[^>]*>(.*?)</td>', html, re.S)
+                if m_sum: raw_sum = re.sub(r'<[^>]+>', '', m_sum.group(1)).strip()
+                m_cap = re.search(r'>Market Cap</td><td[^>]*><b>([^<]+)</b>', html)
+                if m_cap and mcap_s == "-": mcap_s = m_cap.group(1)
+                m_sec = re.findall(r'class="tab-link"[^>]*>([^<]+)</a>', html)
+                if len(m_sec) >= 3:
+                    if sec == "-": sec = m_sec[0]
+                    if ind == "-": ind = m_sec[1]
+                    if ctry == "-": ctry = m_sec[2]
+        except Exception: pass
+
+    rng_s = f"{lo52:,.2f} - {hi52:,.2f} {curr}" if (pd.notna(lo52) and pd.notna(hi52)) else "-"
+    return True, {
+        "Ticker": tk, "Name": comp, "Sector": tr_ro(sec), "Currency": curr,
+        "Industry": tr_ro(ind), "Country": tr_ro(ctry),
+        "MarketCap": mcap_s, "PE": pe_s, "DivYield": dy_s, "Range52": rng_s,
+        "Summary": tr_ro(raw_sum) if raw_sum else "Nu există descriere disponibilă pentru acest instrument."
+    }
 def render_company_card(d):
     with st.container(border=True):
         st.markdown(f"### 🏢 {d['Name']} (`{d['Ticker']}`)")
@@ -150,5 +165,6 @@ if all_tks:
     sel_info = st.selectbox("🏢 Detalii companie (dă clic pe un rând din tabel sau alege din listă):", opts, index=def_idx, key="an_info_sel")
     target_tk = clicked_tk or (sel_info if sel_info != "Alege un tiker..." else None)
     if target_tk:
-        ok_i, det_i = get_company_details_ro(target_tk)
+        r_m = v_sorted[v_sorted["Ticker"].astype(str) == target_tk].iloc[0]
+        ok_i, det_i = get_company_details_ro(target_tk, str(r_m["Company"]), str(r_m["Sector"]), str(r_m["Currency"]), r_m["Low_52W"], r_m["High_52W"], str(r_m["PE_Ratio"] or "-"))
         if ok_i: render_company_card(det_i)
