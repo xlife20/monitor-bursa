@@ -1,11 +1,10 @@
 import streamlit as st
-import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 import yfinance as yf
-import json, re, urllib.request
+import re, urllib.request
 from pathlib import Path
-from utils import get_meta, fetch_data, fetch_annual_dividends, fetch_fundamentals, c_pnl, c_rsi, f_price, f_rsi, f_sma, f_pct, clean_table
+from utils import get_meta, fetch_data, fetch_annual_dividends, fetch_fundamentals, c_pnl, c_rsi, f_price, f_rsi, f_sma, f_pct, clean_table, compact_col_cfg
 
 st.set_page_config(page_title="Analiză", layout="wide")
 BASE = Path(__file__).resolve().parent.parent
@@ -84,39 +83,7 @@ def render_company_card(d):
         m2.metric("P/E Ratio", d["PE"])
         m3.metric("Randament Dividend", d["DivYield"])
         m4.metric("Min / Max 52 Săptămâni", d["Range52"])
-        js_txt = json.dumps(d["Summary"])
-        html_box = f"""
-        <div id="ro_box" style="color:#fafafa;font-family:'Source Sans Pro',sans-serif;font-size:15px;line-height:1.6;"></div>
-        <script>
-        (async function() {{
-          const orig = {js_txt};
-          const box = document.getElementById("ro_box");
-          box.innerText = orig;
-          try {{
-            const r1 = await fetch("https://googleapis.com" + encodeURIComponent(orig));
-            const d1 = await r1.json();
-            const arr = Array.isArray(d1) ? d1.at(0) : null;
-            if (Array.isArray(arr)) {{
-              const txt = arr.map(x => Array.isArray(x) ? x.at(0) : "").join("");
-              if (txt) {{ box.innerText = txt; return; }}
-            }}
-          }} catch (e) {{}}
-          try {{
-            const parts = orig.match(/.{{1,450}}(\\s|$)/g) || [];
-            let out = [];
-            for (const p of parts.slice(0, 5)) {{
-              const r2 = await fetch("https://translated.net" + encodeURIComponent(p.trim()) + "&langpair=en|ro");
-              const d2 = await r2.json();
-              const t2 = d2 && d2.responseData ? d2.responseData.translatedText : "";
-              out.push(t2 || p);
-            }}
-            if (out.length) box.innerText = out.join(" ");
-          }} catch (e2) {{}}
-        }})();
-        </script>
-        """
-        h_est = max(120, (len(d["Summary"]) // 105 + 2) * 26)
-        components.html(html_box, height=h_est, scrolling=True)
+        st.write(d["Summary"])
 n1, n2, n3, n4, n5 = st.columns(5)
 if n1.button("⬅️ Meniu Principal", use_container_width=True): st.switch_page("app.py")
 if n2.button("📈 Portofoliu XTB", use_container_width=True): st.switch_page("pages/1_Portofoliu_XTB.py")
@@ -185,10 +152,10 @@ if sub.empty:
 else:
     cols = ["Ticker", "Company", "Currency", "Sector", "vs_Target", t_col, "Current Price", "Low_52W", "High_52W", "PE_Ratio", "Div_Y", "RSI", "SMA_Pct", "Day_Pct"]
     disp = sub.reindex(columns=cols).copy()
-    disp.columns = ["Tiker", "Companie", "Monedă", "Sector", "vs Preț mediu %", "Preț mediu", "Preț curent", "Min 52 săpt.", "Max 52 săpt.", "P/E Ratio", "Dividend AN%", "RSI (14)", "vs SMA 200 %", "Variație azi %"]
-    fmt = {"Preț mediu": f_avg, "Preț curent": f_price, "Min 52 săpt.": f_price, "Max 52 săpt.": f_price, "Dividend AN%": fyoc, "RSI (14)": f_rsi, "vs SMA 200 %": f_sma, "vs Preț mediu %": f_pct, "Variație azi %": f_pct}
-    styler = clean_table(disp, fmt).style.map(c_pnl, subset=["vs Preț mediu %", "vs SMA 200 %", "Variație azi %"]).map(c_rsi, subset=["RSI (14)"])
-    ev = st.dataframe(styler, use_container_width=True, hide_index=True, height=230, on_select="rerun", selection_mode="single-row", column_config={"Tiker": st.column_config.TextColumn("Tiker", pinned=True)})
+    disp.columns = ["Tiker", "Companie", "Mon.", "Sector", "vs Preț\nmediu %", "Preț\nmediu", "Preț\ncurent", "Min 52\nsăpt.", "Max 52\nsăpt.", "P/E\nRatio", "Divid.\nAN %", "RSI\n(14)", "vs SMA\n200 %", "Var.\nazi %"]
+    fmt = {"Preț\nmediu": f_avg, "Preț\ncurent": f_price, "Min 52\nsăpt.": f_price, "Max 52\nsăpt.": f_price, "Divid.\nAN %": fyoc, "RSI\n(14)": f_rsi, "vs SMA\n200 %": f_sma, "vs Preț\nmediu %": f_pct, "Var.\nazi %": f_pct}
+    styler = clean_table(disp, fmt).style.map(c_pnl, subset=["vs Preț\nmediu %", "vs SMA\n200 %", "Var.\nazi %"]).map(c_rsi, subset=["RSI\n(14)"])
+    ev = st.dataframe(styler, use_container_width=True, hide_index=True, height=230, on_select="rerun", selection_mode="single-row", column_config=compact_col_cfg(disp.columns))
     if ev and ev.selection and ev.selection.rows:
         r_idx = next(iter(ev.selection.rows))
         if r_idx < len(sub):
