@@ -11,6 +11,9 @@ XTB_CSV = BASE / "portfolio.csv"
 KRK_CSV = BASE / "portfolio_kraken.csv"
 STATS_CSV = BASE / "summary_stats.csv"
 
+def gcol(r, i):
+    return str(list(r)[i]).strip() if len(r) > i else ""
+
 def load_stats():
     defs = {"xtb_cash": 164.22, "xtb_closed_pnl": 0.0, "xtb_closed_divs": 18.24, "krk_cash": 0.0}
     if STATS_CSV.exists():
@@ -45,18 +48,15 @@ def parse_xtb_any(up_f):
     mode = ""
     for r in rows_all:
         if not r or all(x == "" for x in r): continue
-        c0 = r
-        c1 = r if len(r) > 1 else ""
-        c2 = r if len(r) > 2 else ""
-        c5 = r if len(r) > 5 else ""
-        c8 = r if len(r) > 8 else ""
+        c0, c1, c2, c5 = gcol(r, 0), gcol(r, 1), gcol(r, 2), gcol(r, 5)
+        low_row = [x.lower() for x in r]
 
         if "free funds" in c0.lower() and c1:
             try: free_funds = float(c1.replace(",", ""))
             except ValueError: pass
-        if c0 == "Product" and "Open price" in r:
+        if c0 == "Product" and "open price" in low_row:
             mode = "open"; continue
-        if c0 == "Type" and "Amount" in r:
+        if c0 == "Type" and "amount" in low_row:
             mode = "cash"; continue
         if c0 in ("Total", "Account number", "Note"):
             mode = ""; continue
