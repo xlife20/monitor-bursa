@@ -12,6 +12,7 @@ st.markdown("<style>div[data-testid='stButton'] button p {font-size: 16px !impor
 
 for k_ss in ("w_add", "w_del"):
     if k_ss not in st.session_state: st.session_state[k_ss] = False
+if "w_flt" not in st.session_state: st.session_state.w_flt = ""
 
 n1, n2, n3, n4 = st.columns(4)
 if n1.button("⬅️ Meniu Principal", use_container_width=True): st.switch_page("app.py")
@@ -73,6 +74,13 @@ if st.session_state.w_del:
                 st.session_state.w_del = False
                 st.cache_data.clear()
                 st.rerun()
+st.markdown("<br><br>", unsafe_allow_html=True)
+_, b_rsi, b_sma, _ = st.columns((2.5, 1.5, 1.5, 2.5))
+if b_rsi.button("📉 RSI < 30", use_container_width=True):
+    st.session_state.w_flt = "" if st.session_state.w_flt == "rsi" else "rsi"
+if b_sma.button("📊 SMA200 <", use_container_width=True):
+    st.session_state.w_flt = "" if st.session_state.w_flt == "sma" else "sma"
+
 df = df[df["Ticker"].astype(str).str.strip() != ""].copy()
 tks = df["Ticker"].astype(str).unique().tolist()
 acurr = sorted([x for x in df["Currency"].astype(str).unique().tolist() if x.strip()]) or ["EUR", "USD"]
@@ -92,14 +100,30 @@ df["vs_Target"] = np.where((df[t_col] > 0) & df["Current Price"].notna(), (df["C
 df["Div_Sh"] = pd.to_numeric(df["Ticker"].map(adiv), errors="coerce").fillna(0.0).astype(float)
 df["Div_Y"] = np.where((df["Current Price"] > 0) & (df["Div_Sh"] > 0), (df["Div_Sh"] / df["Current Price"]) * 100, np.nan).astype(float)
 
-v = df.sort_values(by="Ticker", ascending=True)
 fyoc = lambda x: "" if (pd.isna(x) or x == "" or float(x) <= 0) else f"{float(x):.2f}%"
 f_avg = lambda x: "" if (pd.isna(x) or x == "" or float(x) <= 0) else f_price(x)
 
-if not v.empty:
+def show_wl_table(sub_df, h_px):
     cols = ["Ticker", "Company", "Currency", "Sector", "vs_Target", t_col, "Current Price", "Div_Y", "RSI", "SMA_Pct", "Day_Pct"]
-    disp = v.reindex(columns=cols).copy()
+    disp = sub_df.reindex(columns=cols).copy()
     disp.columns = ["Tiker", "Companie", "Monedă", "Sector", "vs Preț mediu %", "Preț mediu", "Preț curent", "Dividend AN%", "RSI (14)", "vs SMA 200 %", "Variație azi %"]
     fmt = {"Preț mediu": f_avg, "Preț curent": f_price, "Dividend AN%": fyoc, "RSI (14)": f_rsi, "vs SMA 200 %": f_sma, "vs Preț mediu %": f_pct, "Variație azi %": f_pct}
     styler = clean_table(disp, fmt).style.map(c_pnl, subset=["vs Preț mediu %", "vs SMA 200 %", "Variație azi %"]).map(c_rsi, subset=["RSI (14)"])
-    st.dataframe(styler, use_container_width=True, hide_index=True, height=620, column_config={"Tiker": st.column_config.TextColumn("Tiker", pinned=True)})
+    st.dataframe(styler, use_container_width=True, hide_index=True, height=h_px, column_config={"Tiker": st.column_config.TextColumn("Tiker", pinned=True)})
+
+if st.session_state.w_flt == "rsi":
+    top_rsi = df[df["RSI"].notna() & (df["RSI"] < 30)].sort_values(by="RSI", ascending=True).head(5)
+    st.subheader("📉 Top 5 Acțiuni cu RSI < 30 (Crescător)")
+    if top_rsi.empty: st.info("Nicio acțiune din Watchlist nu are RSI sub 30 în acest moment.")
+    else: show_wl_table(top_rsi, 215)
+    st.divider()
+elif st.session_state.w_flt == "sma":
+    top_sma = df[df["SMA_Pct"].notna() & (df["SMA_Pct"] < 0)].sort_values(by="SMA_Pct", ascending=True).head(5)
+    st.subheader("📊 Top 5 Acțiuni sub SMA 200 (De la cea mai mare scădere)")
+    if top_sma.empty: st.info("Nicio acțiune din Watchlist nu se află sub SMA 200 în acest moment.")
+    else: show_wl_table(top_sma, 215)
+    st.divider()
+
+v = df.sort_values(by="Ticker", ascending=True)
+if not v.empty:
+    show_wl_table(v, 580)
