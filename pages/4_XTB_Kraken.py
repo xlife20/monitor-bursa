@@ -186,44 +186,41 @@ x_val_tot_cu_retr = x_val_cont + x_with
 x_net_real = x_val_tot_cu_retr - x_dep
 k_cash, k_prof = stats["krk_cash"] * er, (k_mkt - k_inv) + k_earn
 
-st.subheader("📈 Portofoliu XTB — Reconciliere Completă (Editabil)")
-col_sum = f"Sumă ({tc})"
-xtb_rows = [
-    {"Pas": "1. Banii tăi", "Element": "Total Depus în XTB", col_sum: round(x_dep, 2), "Explicație": "Editabil: Toate depunerile efectuate în cont"},
-    {"Pas": "2. Banii tăi", "Element": "Total Retras în bancă", col_sum: round(-x_with, 2), "Explicație": "Editabil: Bani scoși deja din contul XTB"},
-    {"Pas": "3. Capital rămas", "Element": "Capital Net Rămas în Cont", col_sum: round(x_net_dep, 2), "Explicație": "Calculat automat: Depuneri minus retrageri"},
-    {"Pas": "4. Câștig încasat", "Element": "Profit din vânzarea acțiunilor", col_sum: round(x_cpnl, 2), "Explicație": "Editabil: Profit/pierdere netă poziții închise"},
-    {"Pas": "5. Câștig încasat", "Element": "Profit dividende nete", col_sum: round(x_tdivs, 2), "Explicație": "Editabil: Dividende încasate după impozite"},
-    {"Pas": "6. Alocare", "Element": "Profit Reinvestit în acțiuni", col_sum: round(x_reinv, 2), "Explicație": "Calculat automat: Câștig folosit pentru acțiuni noi"},
-    {"Pas": "7. Alocare", "Element": "Suma nealocată (Cash / Fonduri libere)", col_sum: round(x_cash, 2), "Explicație": "Editabil: Bani lichizi disponibili în cont"},
-    {"Pas": "8. Portofoliu activ", "Element": "Valoare Investită (Cost achiziție)", col_sum: round(x_inv, 2), "Explicație": "Din portofoliul activ XTB"},
-    {"Pas": "9. Portofoliu activ", "Element": "Valoare Actuală Piață (Acțiuni/ETF)", col_sum: round(x_mkt, 2), "Explicație": f"Evoluție poziții deschise: {x_unr:+,.2f} {tc}"},
-    {"Pas": "10. Sold XTB", "Element": "Valoare Rămasă în Contul XTB", col_sum: round(x_val_cont, 2), "Explicație": "Calculat automat: Piață + Cash"},
-    {"Pas": "11. Total Generat", "Element": "Valoare Totală (Cont XTB + Retrageri)", col_sum: round(x_val_tot_cu_retr, 2), "Explicație": "Calculat automat: Sold Cont + Retrageri"},
-    {"Pas": "12. Rezultat Final", "Element": "PROFIT NET REAL XTB", col_sum: round(x_net_real, 2), "Explicație": "Calculat automat: Valoare Totală minus Total Depus"}
+st.subheader(f"📈 Portofoliu XTB — Reconciliere Completă ({tc})")
+c_names = [
+    "1. Total Depus", "2. Total Retras", "3. Capital Net", "4. Profit Vânzări",
+    "5. Dividende Nete", "6. Reinvestit", "7. Cash Nealocat", "8. Investit Activ",
+    "9. Valoare Piață", "10. Sold Cont XTB", "11. Total + Retrageri", "12. PROFIT NET REAL"
 ]
-ed_xtb_tbl = st.data_editor(
-    pd.DataFrame(xtb_rows),
-    use_container_width=True,
-    hide_index=True,
-    height=465,
-    disabled=["Pas", "Element", "Explicație"],
-    column_config={col_sum: st.column_config.NumberColumn(col_sum, format="%.2f")},
-    key="ed_xtb_reconcil"
-)
-if st.button("💾 Salvează modificările manuale XTB", type="primary"):
-    vals_map = dict(zip(ed_xtb_tbl["Element"], ed_xtb_tbl[col_sum]))
-    if "Total Depus în XTB" in vals_map: stats["xtb_dep"] = abs(float(vals_map["Total Depus în XTB"])) / er
-    if "Total Retras în bancă" in vals_map: stats["xtb_with"] = abs(float(vals_map["Total Retras în bancă"])) / er
-    if "Profit din vânzarea acțiunilor" in vals_map: stats["xtb_closed_pnl"] = float(vals_map["Profit din vânzarea acțiunilor"]) / er
-    if "Profit dividende nete" in vals_map:
-        new_tot_div_eur = float(vals_map["Profit dividende nete"]) / er
-        open_div_eur = x_odivs / er
-        stats["xtb_closed_divs"] = max(new_tot_div_eur - open_div_eur, 0.0)
-    if "Suma nealocată (Cash / Fonduri libere)" in vals_map: stats["xtb_cash"] = float(vals_map["Suma nealocată (Cash / Fonduri libere)"]) / er
-    ok = save_stats(stats)
-    st.success("Salvat permanent pe GitHub!" if ok else "Salvat local!")
-    st.rerun()
+xtb_df_horiz = pd.DataFrame([{
+    "1. Total Depus": f"{x_dep:,.2f}",
+    "2. Total Retras": f"-{x_with:,.2f}",
+    "3. Capital Net": f"{x_net_dep:,.2f}",
+    "4. Profit Vânzări": f"{x_cpnl:+,.2f}",
+    "5. Dividende Nete": f"+{x_tdivs:,.2f}",
+    "6. Reinvestit": f"+{x_reinv:,.2f}",
+    "7. Cash Nealocat": f"{x_cash:,.2f}",
+    "8. Investit Activ": f"{x_inv:,.2f}",
+    "9. Valoare Piață": f"{x_mkt:,.2f}",
+    "10. Sold Cont XTB": f"{x_val_cont:,.2f}",
+    "11. Total + Retrageri": f"{x_val_tot_cu_retr:,.2f}",
+    "12. PROFIT NET REAL": f"{x_net_real:+,.2f}"
+}])
+col_cfg = {
+    "1. Total Depus": st.column_config.TextColumn("1. Total Depus", help="Toate depunerile efectuate în contul XTB"),
+    "2. Total Retras": st.column_config.TextColumn("2. Total Retras", help="Bani scoși deja din contul XTB în bancă"),
+    "3. Capital Net": st.column_config.TextColumn("3. Capital Net", help="Depuneri minus retrageri (banii tăi rămași activi)"),
+    "4. Profit Vânzări": st.column_config.TextColumn("4. Profit Vânzări", help="Diferența netă dintre prețul de vânzare și cost (poziții închise)"),
+    "5. Dividende Nete": st.column_config.TextColumn("5. Dividende Nete", help="Dividende încasate după impozite"),
+    "6. Reinvestit": st.column_config.TextColumn("6. Reinvestit", help="Câștig din vânzări și dividende folosit pentru a cumpăra acțiuni noi"),
+    "7. Cash Nealocat": st.column_config.TextColumn("7. Cash Nealocat", help="Bani lichizi disponibili în cont (Fonduri libere)"),
+    "8. Investit Activ": st.column_config.TextColumn("8. Investit Activ", help="Costul de achiziție al acțiunilor deținute (Capital Net + Reinvestit)"),
+    "9. Valoare Piață": st.column_config.TextColumn("9. Valoare Piață", help=f"Valoarea actuală a acțiunilor/ETF-urilor (Evoluție deschise: {x_unr:+,.2f} {tc})"),
+    "10. Sold Cont XTB": st.column_config.TextColumn("10. Sold Cont XTB", help="Valoare Piață + Cash Nealocat"),
+    "11. Total + Retrageri": st.column_config.TextColumn("11. Total + Retrageri", help="Sold Cont XTB + Total Retras în bancă"),
+    "12. PROFIT NET REAL": st.column_config.TextColumn("12. PROFIT NET REAL", help=f"Total + Retrageri ({x_val_tot_cu_retr:,.2f}) minus Total Depus ({x_dep:,.2f})")
+}
+st.dataframe(xtb_df_horiz, use_container_width=True, hide_index=True, column_config=col_cfg)
 
 st.divider(); st.subheader("🪙 Portofoliu Kraken")
 k1, k2, k3, k4 = st.columns(4)
@@ -235,3 +232,6 @@ k4.metric("Profit actualizat Kraken", f"{k_prof:+,.2f} {tc}", f"{((k_prof / k_in
 st.divider(); st.subheader("🌐 Total General (XTB + Kraken)")
 g1, g2, g3, g4 = st.columns(4)
 g1.metric("Total Investit", f"{(x_inv + k_inv):,.2f} {tc}")
+g2.metric("Total Cash Nealocat", f"{(x_cash + k_cash):,.2f} {tc}")
+g3.metric("Valoare Totală Conturi", f"{(x_val_cont + k_mkt + k_cash):,.2f} {tc}")
+g4.metric("Profit Net Cumulat", f"{(x_net_real + k_prof):+,.2f} {tc}")
