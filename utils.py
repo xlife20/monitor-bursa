@@ -1,20 +1,9 @@
 import streamlit as st
-import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 import yfinance as yf
 import base64, json, urllib.request
 from pathlib import Path
-
-def enable_auto_refresh(sec=60):
-    now_s = pd.Timestamp.now(tz="Europe/Madrid").strftime("%H:%M:%S")
-    if st.session_state.get("_ar_drawn") == now_s:
-        return
-    st.session_state["_ar_drawn"] = now_s
-    on = st.sidebar.toggle("🔄 Auto-Refresh 1 min", value=True, key=f"ar_tg_{now_s}")
-    st.sidebar.caption(f"Ultima actualizare: {now_s}")
-    if on:
-        components.html(f"<script>setTimeout(function(){{window.parent.location.reload();}}, {sec * 1000});</script>", height=0, width=0)
 
 def save_csv_permanent(df, csv_path):
     csv_path.parent.mkdir(parents=True, exist_ok=True)
@@ -65,10 +54,10 @@ def get_meta(t):
         return t, "Altele", "EUR" if t.endswith(".DE") or "-EUR" in t else "USD"
 
 @st.cache_data(ttl=60, show_spinner=False)
-def _fetch_cached(tks_tuple, curr_tuple):
+def fetch_data(tickers, currencies):
     prices, changes, rsim, smam = {}, {}, {}, {}
     uk_p = {"DGE.L", "BATS.L", "ABF.L"}
-    clean_tks = [str(t).strip() for t in tks_tuple if str(t).strip()]
+    clean_tks = [str(t).strip() for t in tickers if str(t).strip()]
     if clean_tks:
         try:
             data = yf.download(clean_tks, period="1y", interval="1d", group_by="ticker", progress=False, threads=True)
@@ -97,7 +86,7 @@ def _fetch_cached(tks_tuple, curr_tuple):
         except Exception:
             pass
     fx = {"USD": 1.0, "EUR": 1.08, "GBP": 1.27}
-    for c in curr_tuple:
+    for c in currencies:
         cu = str(c).strip().upper()
         if not cu or cu == "USD":
             continue
@@ -108,10 +97,6 @@ def _fetch_cached(tks_tuple, curr_tuple):
         except Exception:
             pass
     return prices, changes, rsim, smam, fx
-
-def fetch_data(tickers, currencies):
-    enable_auto_refresh(60)
-    return _fetch_cached(tuple(tickers), tuple(currencies))
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def fetch_annual_dividends(tickers):
