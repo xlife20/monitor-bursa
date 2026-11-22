@@ -2,12 +2,12 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from utils import save_csv_permanent, fetch_data, c_pnl, c_rsi, f_price, f_shares, f_num2, f_rsi, f_sma, f_pct, clean_table, quick_del
+from utils import save_csv_permanent, fetch_data, c_pnl, c_rsi, f_price, f_shares, f_num2, f_rsi, f_sma, f_pct, clean_table, compact_col_cfg, quick_del
 
 st.set_page_config(page_title="Portofoliu Kraken", layout="wide")
 CSV_PATH = Path(__file__).resolve().parent.parent / "portfolio_kraken.csv"
 
-st.markdown("<style>div[data-testid='stButton'] button p {font-size: 16px !important; font-weight: 700 !important;}</style>", unsafe_allow_html=True)
+st.markdown("<style>div[data-testid='stButton'] button p {font-size: 15px !important; font-weight: 700 !important;}</style>", unsafe_allow_html=True)
 
 n1, n2, n3, n4, n5 = st.columns(5)
 if n1.button("⬅️ Meniu Principal", use_container_width=True): st.switch_page("app.py")
@@ -75,10 +75,10 @@ f_earn = lambda x: "" if (pd.isna(x) or x == "") else f"{float(x):,.4f}"
 if not v.empty:
     cols = ["Ticker", "Company", "Sector", "Shares", "Buy Price", "RSI", "SMA_Pct", "Current Price", "Currency", "Inv", "Mkt", "Div", "PnL", "Ret", "Wgt"]
     disp = v.reindex(columns=cols).copy()
-    disp.columns = ["Tiker", "Monedă / Activ", "Categorie", "Cantitate", "Preț mediu", "RSI (14)", "vs SMA 200 %", "Preț curent", "Monedă", "Valoare investită", "Valoare piață", "Recompense Earn", "Profit / Pierdere", "Randament %", "Pondere %"]
-    fmt = {"Cantitate": f_shares, "Preț mediu": f_price, "RSI (14)": f_rsi, "vs SMA 200 %": f_sma, "Preț curent": f_price, "Valoare investită": f_num2, "Valoare piață": f_num2, "Recompense Earn": f_earn, "Profit / Pierdere": f_num2, "Randament %": f_pct, "Pondere %": f_pct}
-    styler = clean_table(disp, fmt).style.map(c_pnl, subset=["Profit / Pierdere", "Randament %", "vs SMA 200 %"]).map(c_rsi, subset=["RSI (14)"])
-    st.dataframe(styler, use_container_width=True, hide_index=True, height=400, column_config={"Tiker": st.column_config.TextColumn("Tiker", pinned=True)})
+    disp.columns = ["Tiker", "Monedă / Activ", "Categ.", "Cantit.", "Preț\nmediu", "RSI\n(14)", "vs SMA\n200 %", "Preț\ncurent", "Mon.", "Valoare\ninvestită", "Valoare\npiață", "Recomp.\nEarn", "Profit /\nPierdere", "Rand.\n%", "Pond.\n%"]
+    fmt = {"Cantit.": f_shares, "Preț\nmediu": f_price, "RSI\n(14)": f_rsi, "vs SMA\n200 %": f_sma, "Preț\ncurent": f_price, "Valoare\ninvestită": f_num2, "Valoare\npiață": f_num2, "Recomp.\nEarn": f_earn, "Profit /\nPierdere": f_num2, "Rand.\n%": f_pct, "Pond.\n%": f_pct}
+    styler = clean_table(disp, fmt).style.map(c_pnl, subset=["Profit /\nPierdere", "Rand.\n%", "vs SMA\n200 %"]).map(c_rsi, subset=["RSI\n(14)"])
+    st.dataframe(styler, use_container_width=True, hide_index=True, height=400, column_config=compact_col_cfg(disp.columns))
     quick_del(df, req, CSV_PATH, "krk")
     l1, r1 = st.columns(2)
     with l1:
