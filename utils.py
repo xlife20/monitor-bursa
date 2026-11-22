@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import yfinance as yf
-import base64, json, urllib.request
+import base64, json, re, urllib.request
 from pathlib import Path
 
 def save_csv_permanent(df, csv_path):
@@ -55,7 +55,7 @@ def get_meta(t):
 
 @st.cache_data(ttl=60, show_spinner=False)
 def fetch_data(tickers, currencies):
-    prices, changes, rsim, smam = {}, {}, {}, {}
+    prices, changes, rsim, smam, lo52m, hi52m = {}, {}, {}, {}, {}, {}
     uk_p = {"DGE.L", "BATS.L", "ABF.L"}
     clean_tks = [str(t).strip() for t in tickers if str(t).strip()]
     if clean_tks:
@@ -63,12 +63,17 @@ def fetch_data(tickers, currencies):
             data = yf.download(clean_tks, period="1y", interval="1d", group_by="ticker", progress=False, threads=True)
             for t in clean_tks:
                 try:
-                    s = data[t]["Close"].dropna() if len(clean_tks) > 1 else data["Close"].dropna()
+                    sub_d = data[t] if len(clean_tks) > 1 else data
+                    s = sub_d["Close"].dropna()
                     if s.empty:
                         continue
                     sc = 0.01 if t in uk_p else 1.0
                     p_cur = float(s.iloc[-1]) * sc
                     prices[t] = p_cur
+                    lo_s = sub_d["Low"].dropna() if "Low" in sub_d else s
+                    hi_s = sub_d["High"].dropna() if "High" in sub_d else s
+                    lo52m[t] = float(lo_s.min()) * sc
+                    hi52m[t] = float(hi_s.max()) * sc
                     if len(s) >= 2:
                         p_prev = float(s.iloc[-2]) * sc
                         if p_prev > 0:
@@ -96,25 +101,34 @@ def fetch_data(tickers, currencies):
                 fx[cu] = float(h["Close"].dropna().iloc[-1])
         except Exception:
             pass
+    st.session_state["_52w_cache"] = (lo52m, hi52m)
     return prices, changes, rsim, smam, fx
 @st.cache_data(ttl=86400, show_spinner=False)
-def fetch_fundamentals(tickers):
-    pe_map, lo_map, hi_map = {}, {}, {}
-    uk_p = {"DGE.L", "BATS.L", "ABF.L"}
-    for t in tickers:
+def _get_pe_single(t):
+    try:
+        info = yf.Ticker(t).info or {}
+        pe = info.get("trailingPE") or info.get("forwardPE")
+        if isinstance(pe, (int, float)) and pe > 0:
+            return f"{float(pe):.2f}"
+    except Exception:
+        pass
+    if "." not in t and "-" not in t:
         try:
-            info = yf.Ticker(t).info or {}
-            sc = 0.01 if t in uk_p else 1.0
-            pe = info.get("trailingPE")
-            if isinstance(pe, (int, float)) and pe > 0:
-                pe_map[t] = f"{float(pe):.2f}"
-            lo, hi = info.get("fiftyTwoWeekLow"), info.get("fiftyTwoWeekHigh")
-            if isinstance(lo, (int, float)) and lo > 0:
-                lo_map[t] = float(lo) * sc
-            if isinstance(hi, (int, float)) and hi > 0:
-                hi_map[t] = float(hi) * sc
+            req = urllib.request.Request(f"https://finviz.com{t}", headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=6) as r:
+                html = r.read().decode("utf-8", errors="ignore")
+                m = re.search(r'>P/E</td><td[^>]*><b>([0-9.]+)</b>', html)
+                if m: return f"{float(m.group(1)):.2f}"
         except Exception:
             pass
+    return ""
+
+def fetch_fundamentals(tickers):
+    lo_map, hi_map = st.session_state.get("_52w_cache", ({}, {}))
+    pe_map = {}
+    for t in tickers:
+        v = _get_pe_single(t)
+        if v: pe_map[t] = v
     return pe_map, lo_map, hi_map
 
 @st.cache_data(ttl=86400, show_spinner=False)
