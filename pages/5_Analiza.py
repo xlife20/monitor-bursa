@@ -17,20 +17,23 @@ if "an_flt" not in st.session_state: st.session_state.an_flt = "rsi"
 def tr_ro(txt):
     s = str(txt or "").strip()
     if not s or s == "-": return s
-    try:
-        q = urllib.parse.quote(s[:1800])
-        url = f"https://googleapis.com{q}"
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=8) as r:
-            res = json.loads(r.read().decode("utf-8"))
-            parts = []
-            for item in res[0]:
-                if isinstance(item, list) and len(item) > 0 and isinstance(item[0], str):
-                    parts.append(item[0])
-            out = "".join(parts).strip()
-            return out if out else s
-    except Exception:
-        return s
+    chunks = [s[i:i+450] for i in range(0, min(len(s), 1800), 450)]
+    out_parts = []
+    for ch in chunks:
+        try:
+            q = urllib.parse.quote(ch)
+            url = f"https://translated.net{q}&langpair=en|ro"
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=8) as r:
+                data = json.loads(r.read().decode("utf-8"))
+                t_txt = data.get("responseData", {}).get("translatedText", "")
+                if t_txt and "MYMEMORY WARNING" not in t_txt.upper():
+                    out_parts.append(t_txt)
+                else:
+                    out_parts.append(ch)
+        except Exception:
+            out_parts.append(ch)
+    return " ".join(out_parts).strip() or s
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_company_details_ro(tk, fallback_name="", fallback_sec="", fallback_curr="USD", lo52=None, hi52=None, pe_val="-"):
@@ -65,10 +68,11 @@ def get_company_details_ro(tk, fallback_name="", fallback_sec="", fallback_curr=
                 m_cap = re.search(r'>Market Cap</td><td[^>]*><b>([^<]+)</b>', html)
                 if m_cap and mcap_s == "-": mcap_s = m_cap.group(1)
                 m_sec = re.findall(r'class="tab-link"[^>]*>([^<]+)</a>', html)
-                if len(m_sec) >= 3:
-                    if sec == "-": sec = m_sec[0]
-                    if ind == "-": ind = m_sec[1]
-                    if ctry == "-": ctry = m_sec[2]
+                it_s = iter(m_sec)
+                s1, s2, s3 = next(it_s, ""), next(it_s, ""), next(it_s, "")
+                if sec == "-" and s1: sec = s1
+                if ind == "-" and s2: ind = s2
+                if ctry == "-" and s3: ctry = s3
         except Exception: pass
 
     rng_s = f"{lo52:,.2f} - {hi52:,.2f} {curr}" if (pd.notna(lo52) and pd.notna(hi52)) else "-"
@@ -161,7 +165,7 @@ else:
     styler = clean_table(disp, fmt).style.map(c_pnl, subset=["vs Preț mediu %", "vs SMA 200 %", "Variație azi %"]).map(c_rsi, subset=["RSI (14)"])
     ev = st.dataframe(styler, use_container_width=True, hide_index=True, height=230, on_select="rerun", selection_mode="single-row", column_config={"Tiker": st.column_config.TextColumn("Tiker", pinned=True)})
     if ev and ev.selection and ev.selection.rows:
-        r_idx = ev.selection.rows[0]
+        r_idx = next(iter(ev.selection.rows))
         if r_idx < len(sub):
             clicked_tk = str(sub.iloc[r_idx]["Ticker"])
 
