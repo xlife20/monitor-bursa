@@ -5,7 +5,8 @@ from pathlib import Path
 from utils import save_csv_permanent, get_meta, fetch_data, fetch_annual_dividends, c_pnl, c_rsi, f_price, f_rsi, f_sma, f_pct, clean_table
 
 st.set_page_config(page_title="Watchlist", layout="wide")
-CSV_PATH = Path(__file__).resolve().parent.parent / "watchlist.csv"
+BASE = Path(__file__).resolve().parent.parent
+CSV_PATH, XTB_PATH = BASE / "watchlist.csv", BASE / "portfolio.csv"
 
 st.markdown("<style>div[data-testid='stButton'] button p {font-size: 16px !important; font-weight: 700 !important;}</style>", unsafe_allow_html=True)
 
@@ -26,6 +27,16 @@ req = ["Ticker", "Company", "Sector", t_col, "Currency"]
 for c in req:
     if c not in df.columns: df[c] = 0.0 if c == t_col else ""
 
+xtb_avg = {}
+if XTB_PATH.exists():
+    try:
+        xdf = pd.read_csv(XTB_PATH).fillna("")
+        for _, r in xdf.iterrows():
+            tk = str(r.get("Ticker", "")).strip().upper()
+            bp = pd.to_numeric(r.get("Buy Price", 0.0), errors="coerce")
+            if tk and pd.notna(bp) and bp > 0: xtb_avg[tk] = float(bp)
+    except Exception: pass
+
 h1, h2, h3 = st.columns((1.6, 4.8, 1.6))
 if h1.button("➕ Adaugă tiker", use_container_width=True): st.session_state.w_add = not st.session_state.w_add; st.session_state.w_del = False
 h2.markdown("<h1 style='text-align:center;margin:0;padding:0;'>👁️ Watchlist</h1>", unsafe_allow_html=True)
@@ -41,7 +52,7 @@ if st.session_state.w_add:
             for tk in new_list:
                 if tk not in ex_set:
                     comp, sec, curr = get_meta(tk)
-                    added.append({"Ticker": tk, "Company": comp, "Sector": sec, t_col: 0.0, "Currency": curr})
+                    added.append({"Ticker": tk, "Company": comp, "Sector": sec, t_col: xtb_avg.get(tk, 0.0), "Currency": curr})
                     ex_set.add(tk)
             if added:
                 ndf = pd.concat([df.reindex(columns=req), pd.DataFrame(added)], ignore_index=True)
@@ -69,6 +80,9 @@ prices, changes, rsim, smam, fx = fetch_data(tks, list(set(acurr + ["EUR", "USD"
 adiv = fetch_annual_dividends(tks)
 
 df[t_col] = pd.to_numeric(df.get(t_col, 0.0), errors="coerce").fillna(0.0).astype(float)
+df["XTB_P"] = df["Ticker"].astype(str).str.upper().map(xtb_avg)
+df[t_col] = np.where(df["XTB_P"].notna(), df["XTB_P"], df[t_col]).astype(float)
+
 df["Current Price"] = pd.to_numeric(df["Ticker"].map(prices), errors="coerce").astype(float)
 df["Day_Pct"] = pd.to_numeric(df["Ticker"].map(changes), errors="coerce").astype(float)
 df["RSI"] = pd.to_numeric(df["Ticker"].map(rsim), errors="coerce").astype(float)
@@ -80,19 +94,12 @@ df["Div_Y"] = np.where((df["Current Price"] > 0) & (df["Div_Sh"] > 0), (df["Div_
 
 v = df.sort_values(by="Ticker", ascending=True)
 fyoc = lambda x: "" if (pd.isna(x) or x == "" or float(x) <= 0) else f"{float(x):.2f}%"
+f_avg = lambda x: "" if (pd.isna(x) or x == "" or float(x) <= 0) else f_price(x)
 
 if not v.empty:
     cols = ["Ticker", "Company", "Currency", "Sector", "vs_Target", t_col, "Current Price", "Div_Y", "RSI", "SMA_Pct", "Day_Pct"]
     disp = v.reindex(columns=cols).copy()
     disp.columns = ["Tiker", "Companie", "Monedă", "Sector", "vs Preț mediu %", "Preț mediu", "Preț curent", "Dividend AN%", "RSI (14)", "vs SMA 200 %", "Variație azi %"]
-    fmt = {"Preț mediu": f_price, "Preț curent": f_price, "Dividend AN%": fyoc, "RSI (14)": f_rsi, "vs SMA 200 %": f_sma, "vs Preț mediu %": f_pct, "Variație azi %": f_pct}
+    fmt = {"Preț mediu": f_avg, "Preț curent": f_price, "Dividend AN%": fyoc, "RSI (14)": f_rsi, "vs SMA 200 %": f_sma, "vs Preț mediu %": f_pct, "Variație azi %": f_pct}
     styler = clean_table(disp, fmt).style.map(c_pnl, subset=["vs Preț mediu %", "vs SMA 200 %", "Variație azi %"]).map(c_rsi, subset=["RSI (14)"])
-    st.dataframe(styler, use_container_width=True, hide_index=True, height=580, column_config={"Tiker": st.column_config.TextColumn("Tiker", pinned=True)})
-
-st.subheader("Editare listă urmărire (watchlist.csv)")
-ed = st.data_editor(v.reindex(columns=req), num_rows="dynamic", use_container_width=True, key="ed_wl")
-if st.button("Salvează modificările în watchlist.csv"):
-    if not ed.empty:
-        ok = save_csv_permanent(ed, CSV_PATH)
-        st.cache_data.clear()
-        st.success("Salvat permanent pe GitHub!" if ok else "Salvat local!")
+    st.dataframe(styler, use_container_width=True, hide_index=True, height=620, column_config={"Tiker": st.column_config.TextColumn("Tiker", pinned=True)})
