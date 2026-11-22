@@ -55,7 +55,7 @@ m4.metric("Randament XTB", f"{x_pnl:+,.2f} {t_curr}", f"{x_ret:+.2f}%")
 m5.metric("Randament Kraken", f"{k_pnl:+,.2f} {t_curr}", f"{k_ret:+.2f}%")
 
 st.divider()
-c1, c2, c3 = st.columns(3)
+c1, c2, c3, c4 = st.columns(4)
 
 with c1:
     with st.container(border=True):
@@ -74,6 +74,14 @@ with c2:
             st.switch_page("pages/2_Portofoliu_Kraken.py")
 
 with c3:
+    with st.container(border=True):
+        st.subheader("📊 XTB + Kraken")
+        st.metric("Sinteză & Cash", f"{(tot_mkt + 164.22):,.2f} {t_curr}", "Vânzări, Dividende & Earn")
+        st.caption("Bani nealocați, profit vânzări & earn")
+        if st.button("Deschide XTB + Kraken ➡️", use_container_width=True, type="primary"):
+            st.switch_page("pages/4_XTB_Kraken.py")
+
+with c4:
     with st.container(border=True):
         st.subheader("👁️ Listă de Urmărire")
         st.metric("Watchlist & Dividende", "Monitorizare Live", "RSI, SMA 200 & Divident AN%")
