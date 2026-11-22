@@ -1,8 +1,9 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 import yfinance as yf
-import json, re, urllib.request, urllib.parse
+import json, re, urllib.request
 from pathlib import Path
 from utils import get_meta, fetch_data, fetch_annual_dividends, fetch_fundamentals, c_pnl, c_rsi, f_price, f_rsi, f_sma, f_pct, clean_table
 
@@ -13,44 +14,16 @@ CSV_PATH, XTB_PATH = BASE / "watchlist.csv", BASE / "portfolio.csv"
 st.markdown("<style>div[data-testid='stButton'] button p {font-size: 15px !important; font-weight: 700 !important;}</style>", unsafe_allow_html=True)
 if "an_flt" not in st.session_state: st.session_state.an_flt = "rsi"
 
-def _tr_chunk(ch):
-    q = urllib.parse.quote(ch)
-    for base_u in ("https://lingva.ml", "https://lunar.icu"):
-        try:
-            req = urllib.request.Request(base_u + q, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=7) as r:
-                t = json.loads(r.read().decode("utf-8")).get("translation", "").strip()
-                if t and t.lower() != ch.lower():
-                    return t
-        except Exception:
-            pass
-    try:
-        from deep_translator import GoogleTranslator
-        t = (GoogleTranslator(source="en", target="ro").translate(ch) or "").strip()
-        if t and t.lower() != ch.lower():
-            return t
-    except Exception:
-        pass
-    try:
-        req = urllib.request.Request(f"https://translated.net{q}&langpair=en|ro&de=monitorbursa@gmail.com", headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=7) as r:
-            t = json.loads(r.read().decode("utf-8")).get("responseData", {}).get("translatedText", "").strip()
-            if t and "MYMEMORY" not in t.upper() and t.lower() != ch.lower():
-                return t
-    except Exception:
-        pass
-    return ch
-
-def tr_ro(txt):
-    s = str(txt or "").strip()
-    if not s or s == "-": return s
-    if "tr_mem" not in st.session_state: st.session_state.tr_mem = {}
-    if s in st.session_state.tr_mem: return st.session_state.tr_mem[s]
-    chunks = [s[i:i+450] for i in range(0, min(len(s), 2250), 450)]
-    res = " ".join([_tr_chunk(c) for c in chunks]).strip()
-    if res and res != s:
-        st.session_state.tr_mem[s] = res
-    return res or s
+RO_DICT = {
+    "Technology": "Tehnologie", "Industrials": "Industrie", "Healthcare": "Sănătate",
+    "Financial Services": "Servicii Financiare", "Consumer Cyclical": "Bunuri de Consum Ciclice",
+    "Consumer Defensive": "Bunuri de Consum de Bază", "Energy": "Energie", "Utilities": "Utilități",
+    "Real Estate": "Imobiliare", "Basic Materials": "Materiale de Bază", "Communication Services": "Comunicații",
+    "Semiconductors": "Semiconductori", "Aerospace & Defense": "Aerospațial și Apărare",
+    "United States": "Statele Unite", "Germany": "Germania", "United Kingdom": "Marea Britanie",
+    "France": "Franța", "Spain": "Spania", "Netherlands": "Olanda", "Switzerland": "Elveția", "Canada": "Canada"
+}
+def tr_term(w): return RO_DICT.get(str(w).strip(), str(w).strip())
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_company_raw(tk, fallback_name="", fallback_sec="", fallback_curr="USD", lo52=None, hi52=None, pe_val="-"):
     t_obj = yf.Ticker(tk)
@@ -93,22 +66,39 @@ def get_company_raw(tk, fallback_name="", fallback_sec="", fallback_curr="USD", 
 
     rng_s = f"{lo52:,.2f} - {hi52:,.2f} {curr}" if (pd.notna(lo52) and pd.notna(hi52)) else "-"
     return {
-        "Ticker": tk, "Name": comp, "Sector": sec, "Currency": curr,
-        "Industry": ind, "Country": ctry,
+        "Ticker": tk, "Name": comp, "Sector": tr_term(sec), "Currency": curr,
+        "Industry": tr_term(ind), "Country": tr_term(ctry),
         "MarketCap": mcap_s, "PE": pe_s, "DivYield": dy_s, "Range52": rng_s,
-        "Summary": raw_sum or "No description available for this instrument."
+        "Summary": raw_sum or "Nu există descriere disponibilă pentru acest instrument."
     }
 
-def render_company_card(raw_d):
+def render_company_card(d):
     with st.container(border=True):
-        st.markdown(f"### 🏢 {raw_d['Name']} (`{raw_d['Ticker']}`)")
-        st.caption(f"**Sector:** {tr_ro(raw_d['Sector'])}  |  **Industrie:** {tr_ro(raw_d['Industry'])}  |  **Țară:** {tr_ro(raw_d['Country'])}  |  **Monedă:** {raw_d['Currency']}")
+        st.markdown(f"### 🏢 {d['Name']} (`{d['Ticker']}`)")
+        st.caption(f"**Sector:** {d['Sector']}  |  **Industrie:** {d['Industry']}  |  **Țară:** {d['Country']}  |  **Monedă:** {d['Currency']}")
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Capitalizare Piață", raw_d["MarketCap"])
-        m2.metric("P/E Ratio", raw_d["PE"])
-        m3.metric("Randament Dividend", raw_d["DivYield"])
-        m4.metric("Min / Max 52 Săptămâni", raw_d["Range52"])
-        st.write(tr_ro(raw_d["Summary"]))
+        m1.metric("Capitalizare Piață", d["MarketCap"])
+        m2.metric("P/E Ratio", d["PE"])
+        m3.metric("Randament Dividend", d["DivYield"])
+        m4.metric("Min / Max 52 Săptămâni", d["Range52"])
+        js_txt = json.dumps(d["Summary"])
+        html_box = f"""
+        <div id="ro_box" style="color:#fafafa;font-family:'Source Sans Pro',sans-serif;font-size:15px;line-height:1.6;"></div>
+        <script>
+        const orig = {js_txt};
+        const box = document.getElementById("ro_box");
+        box.innerText = orig;
+        fetch("https://googleapis.com" + encodeURIComponent(orig))
+          .then(r => r.json())
+          .then(data => {{
+            if (data && data[0]) {{
+              box.innerText = data[0].map(x => x[0]).join("");
+            }}
+          }}).catch(() => {{}});
+        </script>
+        """
+        h_est = max(110, (len(d["Summary"]) // 110 + 2) * 26)
+        components.html(html_box, height=h_est, scrolling=True)
 n1, n2, n3, n4, n5 = st.columns(5)
 if n1.button("⬅️ Meniu Principal", use_container_width=True): st.switch_page("app.py")
 if n2.button("📈 Portofoliu XTB", use_container_width=True): st.switch_page("pages/1_Portofoliu_XTB.py")
@@ -116,10 +106,7 @@ if n3.button("🪙 Portofoliu Kraken", use_container_width=True): st.switch_page
 if n4.button("👁️ Watchlist", use_container_width=True): st.switch_page("pages/3_Urmareste.py")
 if n5.button("📊 XTB   Kraken", use_container_width=True): st.switch_page("pages/4_XTB_Kraken.py")
 
-if st.sidebar.button("🔄 Actualizează prețurile live"):
-    st.session_state.tr_mem = {}
-    st.cache_data.clear()
-    st.rerun()
+if st.sidebar.button("🔄 Actualizează prețurile live"): st.cache_data.clear(); st.rerun()
 
 st.markdown("<h1 style='text-align:center;margin-top:4px;margin-bottom:0;'>🔍 Analiză</h1>", unsafe_allow_html=True)
 st.markdown("<br><br>", unsafe_allow_html=True)
