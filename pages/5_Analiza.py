@@ -20,6 +20,9 @@ RO_DICT = {
     "Consumer Defensive": "Bunuri de Consum de Bază", "Energy": "Energie", "Utilities": "Utilități",
     "Real Estate": "Imobiliare", "Basic Materials": "Materiale de Bază", "Communication Services": "Comunicații",
     "Semiconductors": "Semiconductori", "Aerospace & Defense": "Aerospațial și Apărare",
+    "Software - Infrastructure": "Software - Infrastructură", "Consumer Electronics": "Electronice de Consum",
+    "Drug Manufacturers - General": "Producători Farmaceutici", "Oil & Gas Midstream": "Petrol și Gaze - Transport",
+    "REIT - Retail": "REIT - Retail", "REIT - Industrial": "REIT - Industrial", "Banks - Diversified": "Bănci",
     "United States": "Statele Unite", "Germany": "Germania", "United Kingdom": "Marea Britanie",
     "France": "Franța", "Spain": "Spania", "Netherlands": "Olanda", "Switzerland": "Elveția", "Canada": "Canada"
 }
@@ -85,19 +88,34 @@ def render_company_card(d):
         html_box = f"""
         <div id="ro_box" style="color:#fafafa;font-family:'Source Sans Pro',sans-serif;font-size:15px;line-height:1.6;"></div>
         <script>
-        const orig = {js_txt};
-        const box = document.getElementById("ro_box");
-        box.innerText = orig;
-        fetch("https://googleapis.com" + encodeURIComponent(orig))
-          .then(r => r.json())
-          .then(data => {{
-            if (data && data[0]) {{
-              box.innerText = data[0].map(x => x[0]).join("");
+        (async function() {{
+          const orig = {js_txt};
+          const box = document.getElementById("ro_box");
+          box.innerText = orig;
+          try {{
+            const r1 = await fetch("https://googleapis.com" + encodeURIComponent(orig));
+            const d1 = await r1.json();
+            const arr = Array.isArray(d1) ? d1.at(0) : null;
+            if (Array.isArray(arr)) {{
+              const txt = arr.map(x => Array.isArray(x) ? x.at(0) : "").join("");
+              if (txt) {{ box.innerText = txt; return; }}
             }}
-          }}).catch(() => {{}});
+          }} catch (e) {{}}
+          try {{
+            const parts = orig.match(/.{{1,450}}(\\s|$)/g) || [];
+            let out = [];
+            for (const p of parts.slice(0, 5)) {{
+              const r2 = await fetch("https://translated.net" + encodeURIComponent(p.trim()) + "&langpair=en|ro");
+              const d2 = await r2.json();
+              const t2 = d2 && d2.responseData ? d2.responseData.translatedText : "";
+              out.push(t2 || p);
+            }}
+            if (out.length) box.innerText = out.join(" ");
+          }} catch (e2) {{}}
+        }})();
         </script>
         """
-        h_est = max(110, (len(d["Summary"]) // 110 + 2) * 26)
+        h_est = max(120, (len(d["Summary"]) // 105 + 2) * 26)
         components.html(html_box, height=h_est, scrolling=True)
 n1, n2, n3, n4, n5 = st.columns(5)
 if n1.button("⬅️ Meniu Principal", use_container_width=True): st.switch_page("app.py")
