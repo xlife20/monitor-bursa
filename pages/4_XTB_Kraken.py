@@ -46,6 +46,7 @@ def parse_xtb_any(up_f):
             rows_all.append([str(x).strip() for x in r])
 
     mode = ""
+    pnl_idx = -1
     for r in rows_all:
         if not r or all(x == "" for x in r): continue
         c0, c1, c2, c5 = gcol(r, 0), gcol(r, 1), gcol(r, 2), gcol(r, 5)
@@ -54,6 +55,12 @@ def parse_xtb_any(up_f):
         if "free funds" in c0.lower() and c1:
             try: free_funds = float(c1.replace(",", ""))
             except ValueError: pass
+        if "close time" in low_row and ("gross p/l" in low_row or "profit/loss" in low_row or "net p/l" in low_row):
+            mode = "closed"
+            for idx, col_n in enumerate(low_row):
+                if col_n in ("gross p/l", "net p/l", "profit/loss"):
+                    pnl_idx = idx
+            continue
         if c0 == "Product" and "open price" in low_row:
             mode = "open"; continue
         if c0 == "Type" and "amount" in low_row:
@@ -61,13 +68,16 @@ def parse_xtb_any(up_f):
         if c0 in ("Total", "Account number", "Note"):
             mode = ""; continue
 
-        if mode == "open" and c0 in ("My Trades", "Investment Plan") and c2:
+        if mode == "closed" and c0 in ("My Trades", "Investment Plan") and pnl_idx >= 0:
+            try: closed_pnl += float(gcol(r, pnl_idx).replace(",", ""))
+            except ValueError: pass
+        elif mode == "open" and c0 in ("My Trades", "Investment Plan") and c2:
             open_tks.add(c2.replace(".US", "").replace(".UK", ".L").replace(".ES", ".MC").replace(".IT", ".MI"))
         elif mode == "cash" and c2:
             tk = c2.replace(".US", "").replace(".UK", ".L").replace(".ES", ".MC").replace(".IT", ".MI")
             try: amt = float(c5.replace(",", ""))
             except ValueError: continue
-            if c0.lower() in ("close trade", "profit/loss", "closed trade"):
+            if c0.lower() == "close trade" and pnl_idx < 0:
                 closed_pnl += amt
             elif c0 in ("Dividend", "Withholding tax") and tk not in open_tks:
                 closed_divs += amt
