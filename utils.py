@@ -61,11 +61,10 @@ def get_meta(t):
         return t, "Altele", "EUR" if t.endswith(".DE") or "-EUR" in t else "USD"
 
 @st.cache_data(ttl=60, show_spinner=False)
-def fetch_data(tickers, currencies):
-    enable_auto_refresh(60)
+def _fetch_cached(tks_tuple, curr_tuple):
     prices, changes, rsim, smam = {}, {}, {}, {}
     uk_p = {"DGE.L", "BATS.L", "ABF.L"}
-    clean_tks = [str(t).strip() for t in tickers if str(t).strip()]
+    clean_tks = [str(t).strip() for t in tks_tuple if str(t).strip()]
     if clean_tks:
         try:
             data = yf.download(clean_tks, period="1y", interval="1d", group_by="ticker", progress=False, threads=True)
@@ -94,7 +93,7 @@ def fetch_data(tickers, currencies):
         except Exception:
             pass
     fx = {"USD": 1.0, "EUR": 1.08, "GBP": 1.27}
-    for c in currencies:
+    for c in curr_tuple:
         cu = str(c).strip().upper()
         if not cu or cu == "USD":
             continue
@@ -105,6 +104,12 @@ def fetch_data(tickers, currencies):
         except Exception:
             pass
     return prices, changes, rsim, smam, fx
+
+def fetch_data(tickers, currencies):
+    if not st.session_state.get("_ar_init"):
+        st.session_state["_ar_init"] = True
+        enable_auto_refresh(60)
+    return _fetch_cached(tuple(tickers), tuple(currencies))
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def fetch_annual_dividends(tickers):
