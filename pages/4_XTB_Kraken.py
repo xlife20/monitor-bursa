@@ -20,7 +20,7 @@ def to_num(val):
     except ValueError: return None
 
 def load_stats():
-    d = {"xtb_cash": 164.22, "xtb_closed_pnl": 186.81, "xtb_closed_divs": 18.24, "xtb_dep": 3151.0, "xtb_with": 376.0, "krk_cash": 0.0}
+    d = {"xtb_cash": 164.59, "xtb_closed_pnl": 186.81, "xtb_closed_divs": 18.24, "xtb_dep": 3151.0, "xtb_with": 376.0, "krk_cash": 0.0}
     if STATS_CSV.exists():
         try:
             for _, r in pd.read_csv(STATS_CSV).iterrows():
@@ -179,14 +179,17 @@ x_inv, x_mkt, x_odivs, fx = read_port(XTB_CSV); k_inv, k_mkt, k_earn, _ = read_p
 er = fx.get("EUR", 1.08) / fx.get(tc, 1.0)
 x_cash, x_cpnl, x_tdivs, x_unr = stats["xtb_cash"] * er, stats["xtb_closed_pnl"] * er, x_odivs + stats["xtb_closed_divs"] * er, x_mkt - x_inv
 x_dep, x_with = stats["xtb_dep"] * er, stats["xtb_with"] * er
+x_net_dep = x_dep - x_with
+x_reinv = max(x_inv - x_net_dep, 0.0)
 x_net, k_cash, k_prof = x_unr + x_cpnl + x_tdivs, stats["krk_cash"] * er, (k_mkt - k_inv) + k_earn
 
 st.subheader("📈 Portofoliu XTB")
-d1, d2, d3, d4 = st.columns(4)
+d1, d2, d3, d4, d5 = st.columns(5)
 d1.metric("Total Depus XTB", f"{x_dep:,.2f} {tc}")
 d2.metric("Total Retras XTB", f"-{x_with:,.2f} {tc}")
-d3.metric("Capital Net Depus", f"{(x_dep - x_with):,.2f} {tc}")
-d4.metric("Valoare Totală Cont XTB", f"{(x_mkt + x_cash):,.2f} {tc}", f"Profit real vs depus: {((x_mkt + x_cash) - (x_dep - x_with)):+,.2f} {tc}")
+d3.metric("Capital Net Depus", f"{x_net_dep:,.2f} {tc}")
+d4.metric("Profit Reinvestit", f"+{x_reinv:,.2f} {tc}", "Din vânzări și dividende")
+d5.metric("Valoare Totală Cont XTB", f"{(x_mkt + x_cash):,.2f} {tc}", f"Profit real vs depus: {((x_mkt + x_cash) - x_net_dep):+,.2f} {tc}")
 
 x1, x2, x3, x4, x5 = st.columns(5)
 x1.metric("Suma investită (Activă)", f"{x_inv:,.2f} {tc}", f"Piață: {x_mkt:,.2f} {tc}")
