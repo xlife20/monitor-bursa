@@ -183,7 +183,11 @@ def read_port(csv_p):
     df = pd.read_csv(csv_p).fillna("")
     df = df[df["Ticker"].astype(str).str.strip() != ""].copy()
     if df.empty: return 0.0, 0.0, 0.0, 0.0, {"EUR": 1.08, "USD": 1.0, "GBP": 1.27}
-    prices, _, _, _, fx = fetch_data(df["Ticker"].astype(str).unique().tolist(), list(set(df["Currency"].astype(str).unique().tolist() + ["EUR", "USD", "GBP"])))
+    is_wknd = pd.Timestamp.now(tz="Europe/Madrid").weekday() >= 5
+    crypto_set = {"VBTC.DE", "VETH.DE", "VT0P.DE"}
+    is_cr = df["Sector"].astype(str).str.lower().eq("crypto") | df["Ticker"].astype(str).isin(crypto_set) | df["Ticker"].astype(str).str.contains("-EUR|-USD")
+    tks_live = df[is_cr]["Ticker"].astype(str).unique().tolist() if is_wknd else df["Ticker"].astype(str).unique().tolist()
+    prices, _, _, _, fx = fetch_data(tks_live, list(set(df["Currency"].astype(str).unique().tolist() + ["EUR", "USD", "GBP"])))
     for c in ("Shares", "Buy Price", "Current Price", "Dividends EUR"): df[c] = pd.to_numeric(df.get(c, 0.0), errors="coerce").fillna(0.0).astype(float)
     df["Live_P"] = np.where(df["Ticker"].map(prices).notna(), df["Ticker"].map(prices), df["Current Price"]).astype(float)
     tr = fx.get(tc, 1.0); mult = pd.to_numeric(df["Currency"].map(fx), errors="coerce").fillna(1.0).astype(float) / tr
@@ -208,7 +212,8 @@ x_val_cont = x_mkt + x_cash
 x_net_real = (x_val_cont + x_with) - x_dep
 k_cash, k_prof = stats["krk_cash"] * er, (k_mkt - k_inv) + k_earn
 
-st.subheader(f"📈 Portofoliu XTB — Reconciliere Live ({tc})")
+is_wknd_now = pd.Timestamp.now(tz="Europe/Madrid").weekday() >= 5
+st.subheader(f"📈 Portofoliu XTB — Reconciliere Live ({tc})" + (" • ⏸️ Weekend: doar Crypto live" if is_wknd_now else ""))
 cols_info = [
     ("1. Total<br>Depus", f"{x_dep:,.2f}", "Toate depunerile efectuate în contul XTB"),
     ("2. Total<br>Retras", f"-{x_with:,.2f}", "Bani scoși deja din contul XTB în bancă"),
