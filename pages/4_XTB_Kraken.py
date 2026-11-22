@@ -20,7 +20,7 @@ def to_num(val):
     except ValueError: return None
 
 def load_stats():
-    d = {"xtb_cash": 164.22, "xtb_closed_pnl": 0.0, "xtb_closed_divs": 18.24, "krk_cash": 0.0}
+    d = {"xtb_cash": 164.59, "xtb_closed_pnl": 186.81, "xtb_closed_divs": 18.24, "krk_cash": 0.0}
     if STATS_CSV.exists():
         try:
             for _, r in pd.read_csv(STATS_CSV).iterrows():
@@ -40,55 +40,63 @@ def parse_xtb_all(up_f, old_df):
         for r in csv.reader(io.StringIO(up_f.getvalue().decode("utf-8", errors="ignore"))): rows.append([str(x).strip() for x in r])
 
     divs, open_rows, mode, cpnl, ff = {}, [], "", 0.0, None
-    pidx, tidx, vidx, oidx, aidx, yidx = -1, 2, 5, 8, 5, 0
+    pidx, tidx, vidx, oidx, aidx, yidx = 10, 2, 5, 8, 5, 0
     for r in rows:
         if not r or all(x == "" for x in r): continue
         low = [x.lower() for x in r]
-        for i, c in enumerate(low):
-            if any(k in c for k in ("free funds", "fondos libres", "saldo libre", "margen libre")):
-                for nxt in r[i + 1:]:
-                    v = to_num(nxt)
-                    if v is not None: ff = v; break
-        if any(k in low for k in ("hora de cierre", "close time")) and any(k in low for k in ("beneficio bruto", "beneficio neto", "beneficio/pérdida", "gross p/l", "net p/l", "profit/loss")):
-            mode, pidx = "closed", -1
+        c0 = gcol(r, 0).lower()
+
+        if "instrument" in low and "profit/loss" in low and "close time (utc)" in low:
+            mode = "closed"
             for i, cn in enumerate(low):
-                if cn in ("beneficio neto", "net p/l", "beneficio bruto", "gross p/l", "beneficio/pérdida", "profit/loss"): pidx = i; break
+                if cn == "profit/loss": pidx = i; break
             continue
-        if any(k in low for k in ("precio de apertura", "open price")) and any(k in low for k in ("producto", "product")):
-            mode = "open"
-            for i, cn in enumerate(low):
-                if cn in ("símbolo", "simbolo", "ticker"): tidx = i
-                elif cn in ("volumen", "volume"): vidx = i
-                elif cn in ("precio de apertura", "open price"): oidx = i
-            continue
-        if any(k in low for k in ("tipo", "type")) and any(k in low for k in ("importe", "cantidad", "amount")):
+        if "type" in low and "amount" in low and "comment" in low:
             mode = "cash"
             for i, cn in enumerate(low):
-                if cn in ("tipo", "type"): yidx = i
-                elif cn in ("símbolo", "simbolo", "ticker", "instrumento", "instrument"): tidx = i
-                elif cn in ("importe", "amount"): aidx = i
+                if cn == "type": yidx = i
+                elif cn == "ticker": tidx = i
+                elif cn == "amount": aidx = i
             continue
-        if gcol(r, 0).lower() in ("total", "número de cuenta", "account number", "nota", "note"): mode = ""; continue
+        if "product" in low and "open price" in low and "volume" in low:
+            mode = "open"
+            for i, cn in enumerate(low):
+                if cn == "ticker": tidx = i
+                elif cn == "volume": vidx = i
+                elif cn == "open price": oidx = i
+            continue
 
-        if mode == "closed" and pidx >= 0 and not gcol(r, 0).lower().startswith(("total", "producto", "product", "")):
-            v = to_num(gcol(r, pidx))
-            if v is not None: cpnl += v
+        if mode == "closed":
+            if c0.startswith("profit/loss") or c0.startswith("total"):
+                v = to_num(gcol(r, pidx))
+                if v is not None and v != 0: cpnl = v
+                mode = ""; continue
+            if c0 not in ("", "instrument"):
+                v = to_num(gcol(r, pidx))
+                if v is not None: cpnl += v
+
         elif mode == "cash":
+            if c0 == "total":
+                v = to_num(gcol(r, aidx))
+                if v is not None: ff = v
+                mode = ""; continue
             ot, amt, tk = gcol(r, yidx).lower(), to_num(gcol(r, aidx)), clean_tk(gcol(r, tidx))
-            if amt is None: continue
-            if ot in ("close trade", "cierre de operación", "cierre de operacion") and pidx < 0: cpnl += amt
-            elif any(k in ot for k in ("dividend", "dividendo", "withholding", "retención", "retencion")) and tk: divs[tk] = divs.get(tk, 0.0) + amt
-        elif mode == "open" and gcol(r, 0) in ("My Trades", "Investment Plan", "Mis operaciones", "Planes de inversión"):
-            rtk = gcol(r, tidx); tk = clean_tk(rtk)
-            if not tk or "CVR" in tk or "US931" in tk: continue
-            vol, bp = to_num(gcol(r, vidx)), to_num(gcol(r, oidx))
-            if vol is None or bp is None or vol <= 0: continue
-            m = old_df[old_df["Ticker"].astype(str) == tk] if not old_df.empty else pd.DataFrame()
-            if not m.empty: comp, sec, curr = str(next(iter(m["Company"]))), str(next(iter(m["Sector"]))), str(next(iter(m["Currency"])))
-            else:
-                comp, sec, curr = get_meta(tk)
-                if rtk.endswith(".UK"): curr = "USD" if any(x in tk for x in ("ISLN", "EGLN", "SGLD", "COPX")) else "GBP"
-            open_rows.append(dict(Ticker=tk, Company=comp, Sector=sec, Shares=vol, Buy=bp, Currency=curr))
+            if amt is not None and tk and any(k in ot for k in ("dividend", "withholding")):
+                divs[tk] = divs.get(tk, 0.0) + amt
+
+        elif mode == "open":
+            if c0 in ("account number", "total", "note"): mode = ""; continue
+            if gcol(r, 0) in ("My Trades", "Investment Plan", "Investment Plans") and gcol(r, 3) != "":
+                rtk = gcol(r, tidx); tk = clean_tk(rtk)
+                if not tk or "CVR" in tk or "US931" in tk: continue
+                vol, bp = to_num(gcol(r, vidx)), to_num(gcol(r, oidx))
+                if vol is None or bp is None or vol <= 0: continue
+                m = old_df[old_df["Ticker"].astype(str) == tk] if not old_df.empty else pd.DataFrame()
+                if not m.empty: comp, sec, curr = str(next(iter(m["Company"]))), str(next(iter(m["Sector"]))), str(next(iter(m["Currency"])))
+                else:
+                    comp, sec, curr = get_meta(tk)
+                    if rtk.endswith(".UK"): curr = "USD" if any(x in tk for x in ("ISLN", "EGLN", "SGLD", "COPX")) else "GBP"
+                open_rows.append(dict(Ticker=tk, Company=comp, Sector=sec, Shares=vol, Buy=bp, Currency=curr))
 
     out, oset = [], set()
     if open_rows:
@@ -116,7 +124,7 @@ def parse_krk_all(up_f):
             cr, fr = g[~g["norm"].isin({"EUR", "USD", "GBP"}) & g["type"].isin(("trade", "spend", "receive"))], g[g["norm"].isin({"EUR", "USD", "GBP"}) & g["type"].isin(("trade", "spend", "receive"))]
             if not cr.empty and not fr.empty and float(cr["amount"].sum()) > 0:
                 ca = str(next(iter(cr["norm"]))); cost[ca] = cost.get(ca, 0.0) + abs(float(fr["amount"].sum())) + float(fr["fee"].sum())
-    rows = [{"Ticker": f"{a}-EUR", "Company": get_meta(f"{a}-EUR")[0], "Sector": "Crypto", "Shares": round(sh, 8), "Buy Price": round((cost.get(a, 0.0) / sh) if cost.get(a, 0.0) > 0 else 0.0, 4), "Current Price": round((cost.get(a, 0.0) / sh) if cost.get(a, 0.0) > 0 else 0.0, 4), "Currency": "EUR", "Dividends EUR": round(rew.get(a, 0.0), 4)} for a, sh in hold.items() if sh > 1e-7]
+    rows = [{"Ticker": f"{a}-EUR", "Company": get_meta(f"{a}-EUR"), "Sector": "Crypto", "Shares": round(sh, 8), "Buy Price": round((cost.get(a, 0.0) / sh) if cost.get(a, 0.0) > 0 else 0.0, 4), "Current Price": round((cost.get(a, 0.0) / sh) if cost.get(a, 0.0) > 0 else 0.0, 4), "Currency": "EUR", "Dividends EUR": round(rew.get(a, 0.0), 4)} for a, sh in hold.items() if sh > 1e-7]
     er = kdf[kdf["norm"] == "EUR"]
     return pd.DataFrame(rows), (round(float((er["amount"] - er["fee"]).sum()), 2) if not er.empty else None)
 
@@ -136,7 +144,7 @@ with st.container(border=True):
             ndf, ff, cpnl, cdiv = parse_xtb_all(f_xtb, old_x)
             if not ndf.empty: save_csv_permanent(ndf.reindex(columns=req), XTB_CSV)
             if ff is not None: stats["xtb_cash"] = ff
-            stats["xtb_closed_pnl"] = cpnl
+            if cpnl != 0: stats["xtb_closed_pnl"] = cpnl
             if cdiv > 0: stats["xtb_closed_divs"] = cdiv
             save_stats(stats); st.cache_data.clear(); st.rerun()
     with u2:
