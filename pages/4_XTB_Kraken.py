@@ -20,7 +20,7 @@ def to_num(val):
     except ValueError: return None
 
 def load_stats():
-    d = {"xtb_cash": 164.22, "xtb_closed_pnl": 186.81, "xtb_closed_divs": 23.99, "xtb_dep": 3151.0, "xtb_with": 376.0, "xtb_inv_eur": 2914.35, "xtb_base_mkt": 2856.71, "krk_cash": 0.0}
+    d = {"xtb_cash": 164.22, "xtb_closed_pnl": 186.81, "xtb_closed_divs": 23.99, "xtb_dep": 3151.0, "xtb_with": 376.0, "xtb_inv_eur": 2914.35, "xtb_base_mkt": 2856.71, "krk_cash": 78.27, "krk_dep": 258.42, "krk_with": 0.0}
     if STATS_CSV.exists():
         try:
             for _, r in pd.read_csv(STATS_CSV).iterrows():
@@ -124,18 +124,20 @@ def parse_xtb_files(files_list, old_df):
     return pd.DataFrame(out), (round(tot_ff, 2) if has_ff else None), round(tot_cpnl, 2), round(sum(max(v, 0.0) for k, v in divs.items() if k not in oset), 2), round(tot_dep, 2), round(tot_with, 2), inv_eur, (round(ov_mkt, 2) if has_ov else None)
 def parse_krk_all(up_f):
     kdf = pd.read_csv(up_f); kdf.columns = kdf.columns.str.lower().str.strip()
-    if not {"asset", "amount", "type"}.issubset(set(kdf.columns)): return pd.DataFrame(), None
+    if not {"asset", "amount", "type"}.issubset(set(kdf.columns)): return pd.DataFrame(), None, 0.0, 0.0
     kdf["amount"], kdf["fee"] = pd.to_numeric(kdf["amount"], errors="coerce").fillna(0.0), pd.to_numeric(kdf.get("fee", 0.0), errors="coerce").fillna(0.0)
     kdf["amountusd"], kdf["type"] = pd.to_numeric(kdf.get("amountusd", 0.0), errors="coerce").fillna(0.0), kdf["type"].astype(str).str.lower().str.strip()
     m = {"XXBT": "BTC", "XBT": "BTC", "XETH": "ETH", "XXRP": "XRP", "XLTC": "LTC", "XXLM": "XLM", "XDOGE": "DOGE", "ZEUR": "EUR", "ZUSD": "USD", "ZGBP": "GBP"}
     kdf["norm"] = kdf["asset"].apply(lambda a: m.get(str(next(iter(str(a).strip().upper().split(".")))), str(next(iter(str(a).strip().upper().split("."))))))
-    hold, cost, rew = {}, {}, {}
+    hold, cost, rew, kdep, kwth = {}, {}, {}, 0.0, 0.0
     ref = "refid" if "refid" in kdf.columns else ("txid" if "txid" in kdf.columns else None)
     for _, r in kdf.iterrows():
         a, t, amt, fee, uv = r["norm"], r["type"], float(r["amount"]), float(r["fee"]), abs(float(r["amountusd"]))
+        if a == "EUR" and t == "deposit" and amt > 0: kdep += amt
+        if a == "EUR" and t == "withdrawal": kwth += abs(amt)
         if a in {"EUR", "USD", "GBP"} or t in {"transfer", "rollover", "margin", "settle", "hybridearnwithdrawal", "hybridearndeposit"}: continue
         net = amt - fee; hold[a] = hold.get(a, 0.0) + net
-        if t == "deposit" and amt > 0 and uv > 0: cost[a] = cost.get(a, 0.0) + (uv / 1.168)
+        if t == "deposit" and amt > 0 and uv > 0: cost[a] = cost.get(a, 0.0) + (uv / 1.168); kdep += (uv / 1.168)
         if t in ("reward", "staking", "earn", "airdrop", "dividend") and net > 0: rew[a] = rew.get(a, 0.0) + (uv / 1.10 if uv > 0 else 0.0)
     if ref:
         for _, g in kdf.groupby(ref):
@@ -144,24 +146,65 @@ def parse_krk_all(up_f):
                 ca = str(next(iter(cr["norm"]))); cost[ca] = cost.get(ca, 0.0) + abs(float(fr["amount"].sum())) + float(fr["fee"].sum())
     rows = [{"Ticker": f"{a}-EUR", "Company": get_meta(f"{a}-EUR"), "Sector": "Crypto", "Shares": round(sh, 8), "Buy Price": round((cost.get(a, 0.0) / sh) if cost.get(a, 0.0) > 0 else 0.0, 4), "Current Price": round((cost.get(a, 0.0) / sh) if cost.get(a, 0.0) > 0 else 0.0, 4), "Currency": "EUR", "Dividends EUR": round(rew.get(a, 0.0), 4)} for a, sh in hold.items() if sh > 1e-7]
     er = kdf[kdf["norm"] == "EUR"]
-    return pd.DataFrame(rows), (round(float((er["amount"] - er["fee"]).sum()), 2) if not er.empty else None)
+    return pd.DataFrame(rows), (round(float((er["amount"] - er["fee"]).sum()), 2) if not er.empty else None), round(kdep, 2), round(kwth, 2)
 
 for k_ss in ("imp_x4", "imp_k4"):
     if k_ss not in st.session_state: st.session_state[k_ss] = False
 
-n1, n2, n3, n4, n5, n6 = st.columns((1.2, 1.2, 1.2, 1.1, 1.1, 1.1))
+n1, n2, n3, n4, _ = st.columns((1.2, 1.2, 1.2, 1.1, 3.3))
 if n1.button("⬅️ Meniu Principal", use_container_width=True): st.switch_page("app.py")
 if n2.button("📈 Portofoliu XTB", use_container_width=True): st.switch_page("pages/1_Portofoliu_XTB.py")
 if n3.button("🪙 Portofoliu Kraken", use_container_width=True): st.switch_page("pages/2_Portofoliu_Kraken.py")
 if n4.button("👁️ Urmărește", use_container_width=True): st.switch_page("pages/3_Urmareste.py")
-if n5.button("📥 Importă XTB", use_container_width=True): st.session_state.imp_x4 = not st.session_state.imp_x4; st.session_state.imp_k4 = False
-if n6.button("📥 Importă Kraken", use_container_width=True): st.session_state.imp_k4 = not st.session_state.imp_k4; st.session_state.imp_x4 = False
 
 if st.sidebar.button("🔄 Actualizează prețurile live"): st.cache_data.clear(); st.rerun()
 st.markdown("<h1 style='text-align:center;margin-top:4px;margin-bottom:14px;'>XTB &nbsp;&nbsp; Kraken</h1>", unsafe_allow_html=True)
 
 tc, stats = st.sidebar.selectbox("Monedă raportare", ("EUR", "USD", "GBP")), load_stats()
 req = ["Ticker", "Company", "Sector", "Shares", "Buy Price", "Current Price", "Currency", "Dividends EUR"]
+
+def read_port(csv_p, is_xtb=False):
+    if not csv_p.exists(): return 0.0, 0.0, 0.0, 0.0, {"EUR": 1.08, "USD": 1.0, "GBP": 1.27}
+    df = pd.read_csv(csv_p).fillna("")
+    df = df[df["Ticker"].astype(str).str.strip() != ""].copy()
+    if df.empty: return 0.0, 0.0, 0.0, 0.0, {"EUR": 1.08, "USD": 1.0, "GBP": 1.27}
+    is_wknd = pd.Timestamp.now(tz="Europe/Madrid").weekday() >= 5
+    tks_live = [] if (is_xtb and is_wknd) else df["Ticker"].astype(str).unique().tolist()
+    prices, _, _, _, fx = fetch_data(tks_live, list(set(df["Currency"].astype(str).unique().tolist() + ["EUR", "USD", "GBP"])))
+    for c in ("Shares", "Buy Price", "Current Price", "Dividends EUR"): df[c] = pd.to_numeric(df.get(c, 0.0), errors="coerce").fillna(0.0).astype(float)
+    df["Live_P"] = np.where(df["Ticker"].map(prices).notna(), df["Ticker"].map(prices), df["Current Price"]).astype(float)
+    tr = fx.get(tc, 1.0); mult = pd.to_numeric(df["Currency"].map(fx), errors="coerce").fillna(1.0).astype(float) / tr
+    return float((df["Shares"] * df["Buy Price"] * mult).sum()), float((df["Shares"] * df["Current Price"] * mult).sum()), float((df["Shares"] * df["Live_P"] * mult).sum()), float((df["Dividends EUR"] * (fx.get("EUR", 1.08) / tr)).sum()), fx
+
+_, x_csv_base, x_csv_live, x_odivs, fx = read_port(XTB_CSV, is_xtb=True)
+k_inv, _, k_mkt, k_earn, _ = read_port(KRK_CSV, is_xtb=False)
+er = fx.get("EUR", 1.08) / fx.get(tc, 1.0)
+ratio = (x_csv_live / x_csv_base) if x_csv_base > 0 else 1.0
+x_inv, x_mkt = stats["xtb_inv_eur"] * er, (stats["xtb_base_mkt"] * er) * ratio
+x_unr = x_mkt - x_inv
+x_cash = (164.22 if abs(stats["xtb_cash"] - 164.59) < 0.5 else stats["xtb_cash"]) * er
+x_cpnl, x_tdivs = stats["xtb_closed_pnl"] * er, x_odivs + stats["xtb_closed_divs"] * er
+x_dep, x_with = stats["xtb_dep"] * er, stats["xtb_with"] * er
+x_net_dep = x_dep - x_with
+x_reinv = max(x_inv - x_net_dep, 0.0)
+x_val_cont = x_mkt + x_cash
+x_net_real = (x_val_cont + x_with) - x_dep
+
+k_cash = stats["krk_cash"] * er
+k_unr = (k_mkt - k_inv) + k_earn
+k_val_cont = k_mkt + k_cash
+k_dep = max(stats["krk_dep"] * er, k_inv + k_cash)
+k_with = stats["krk_with"] * er
+k_net_dep = k_dep - k_with
+
+def render_html_tbl(cols_list):
+    ths = "".join([f"<th title='{tip}' style='border:1px solid #333;padding:6px 3px;text-align:center;font-weight:bold;background:#1e222d;color:#fff;font-size:12px;line-height:1.25;cursor:help;'>{lbl}</th>" for lbl, _, tip in cols_list])
+    tds = "".join([f"<td title='{tip}' style='border:1px solid #333;padding:8px 3px;text-align:center;font-weight:bold;font-size:13px;color:{('#00e676' if str(val).startswith('+') else ('#ff5252' if str(val).startswith('-') else '#e0e0e0'))};'>{val}</td>" for _, val, tip in cols_list])
+    st.markdown(f"<table style='width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:10px;'><thead><tr>{ths}</tr></thead><tbody><tr>{tds}</tr></tbody></table>", unsafe_allow_html=True)
+
+hx1, hx2 = st.columns((6.8, 1.2))
+hx1.subheader("📈 Portofoliu XTB")
+if hx2.button("📥 Importă XTB", use_container_width=True): st.session_state.imp_x4 = not st.session_state.imp_x4; st.session_state.imp_k4 = False
 
 if st.session_state.imp_x4:
     with st.container(border=True):
@@ -179,51 +222,7 @@ if st.session_state.imp_x4:
             if bmkt is not None: stats["xtb_base_mkt"] = bmkt
             save_stats(stats); st.session_state.imp_x4 = False; st.cache_data.clear(); st.rerun()
 
-if st.session_state.imp_k4:
-    with st.container(border=True):
-        f_krk = st.file_uploader("Încarcă rapoarte Kraken Libro mayor (.csv):", type="csv", accept_multiple_files=True, key="s_krk")
-        if f_krk and st.button("Procesează și Actualizează Tot Kraken", type="primary"):
-            for fk in f_krk:
-                kdf_n, kc = parse_krk_all(fk)
-                if not kdf_n.empty: save_csv_permanent(kdf_n.reindex(columns=req), KRK_CSV)
-                if kc is not None: stats["krk_cash"] = kc
-            save_stats(stats); st.session_state.imp_k4 = False; st.cache_data.clear(); st.rerun()
-
-def read_port(csv_p, is_xtb=False):
-    if not csv_p.exists(): return 0.0, 0.0, 0.0, 0.0, {"EUR": 1.08, "USD": 1.0, "GBP": 1.27}
-    df = pd.read_csv(csv_p).fillna("")
-    df = df[df["Ticker"].astype(str).str.strip() != ""].copy()
-    if df.empty: return 0.0, 0.0, 0.0, 0.0, {"EUR": 1.08, "USD": 1.0, "GBP": 1.27}
-    is_wknd = pd.Timestamp.now(tz="Europe/Madrid").weekday() >= 5
-    tks_live = [] if (is_xtb and is_wknd) else df["Ticker"].astype(str).unique().tolist()
-    prices, _, _, _, fx = fetch_data(tks_live, list(set(df["Currency"].astype(str).unique().tolist() + ["EUR", "USD", "GBP"])))
-    for c in ("Shares", "Buy Price", "Current Price", "Dividends EUR"): df[c] = pd.to_numeric(df.get(c, 0.0), errors="coerce").fillna(0.0).astype(float)
-    df["Live_P"] = np.where(df["Ticker"].map(prices).notna(), df["Ticker"].map(prices), df["Current Price"]).astype(float)
-    tr = fx.get(tc, 1.0); mult = pd.to_numeric(df["Currency"].map(fx), errors="coerce").fillna(1.0).astype(float) / tr
-    inv = float((df["Shares"] * df["Buy Price"] * mult).sum())
-    base_m = float((df["Shares"] * df["Current Price"] * mult).sum())
-    live_m = float((df["Shares"] * df["Live_P"] * mult).sum())
-    divs = float((df["Dividends EUR"] * (fx.get("EUR", 1.08) / tr)).sum())
-    return inv, base_m, live_m, divs, fx
-
-_, x_csv_base, x_csv_live, x_odivs, fx = read_port(XTB_CSV, is_xtb=True)
-k_inv, _, k_mkt, k_earn, _ = read_port(KRK_CSV, is_xtb=False)
-er = fx.get("EUR", 1.08) / fx.get(tc, 1.0)
-ratio = (x_csv_live / x_csv_base) if x_csv_base > 0 else 1.0
-x_inv = stats["xtb_inv_eur"] * er
-x_mkt = (stats["xtb_base_mkt"] * er) * ratio
-x_unr = x_mkt - x_inv
-x_cash = (164.22 if abs(stats["xtb_cash"] - 164.59) < 0.5 else stats["xtb_cash"]) * er
-x_cpnl, x_tdivs = stats["xtb_closed_pnl"] * er, x_odivs + stats["xtb_closed_divs"] * er
-x_dep, x_with = stats["xtb_dep"] * er, stats["xtb_with"] * er
-x_net_dep = x_dep - x_with
-x_reinv = max(x_inv - x_net_dep, 0.0)
-x_val_cont = x_mkt + x_cash
-x_net_real = (x_val_cont + x_with) - x_dep
-k_cash, k_prof = stats["krk_cash"] * er, (k_mkt - k_inv) + k_earn
-
-st.subheader("📈 Portofoliu XTB")
-cols_info = [
+render_html_tbl([
     ("1. Total<br>Depus", f"{x_dep:,.2f}", "Toate depunerile efectuate în contul XTB"),
     ("2. Total<br>Retras", f"-{x_with:,.2f}", "Bani scoși deja din contul XTB în bancă"),
     ("3. Capital<br>Net", f"{x_net_dep:,.2f}", "Depuneri minus retrageri (banii tăi rămași activi)"),
@@ -235,13 +234,18 @@ cols_info = [
     ("9. Total<br>Investit", f"{x_inv:,.2f}", "Costul exact în EUR al acțiunilor deținute (Capital Net + Reinvestit)"),
     ("10. Profit", f"{x_unr:+,.2f}", "Profitul sau pierderea pe pozițiile deschise (Valoare Piață minus Total Investit)"),
     ("11. Valoare<br>Piață", f"{x_mkt:,.2f}", "Valoarea actuală pe bursă a acțiunilor și ETF-urilor din XTB")
-]
-ths = "".join([f"<th title='{tip}' style='border:1px solid #333;padding:6px 3px;text-align:center;font-weight:bold;background:#1e222d;color:#fff;font-size:12px;line-height:1.25;cursor:help;'>{lbl}</th>" for lbl, _, tip in cols_info])
-tds = "".join([f"<td title='{tip}' style='border:1px solid #333;padding:8px 3px;text-align:center;font-weight:bold;font-size:13px;color:{('#00e676' if str(val).startswith('+') else ('#ff5252' if str(val).startswith('-') else '#e0e0e0'))};'>{val}</td>" for _, val, tip in cols_info])
-st.markdown(f"<table style='width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:10px;'><thead><tr>{ths}</tr></thead><tbody><tr>{tds}</tr></tbody></table>", unsafe_allow_html=True)
+])
 
-st.divider(); st.subheader("🪙 Portofoliu Kraken")
-k1, k2, k3, k4 = st.columns(4)
-k1.metric("Suma investită", f"{k_inv:,.2f} {tc}", f"Piață: {k_mkt:,.2f} {tc}")
-k2.metric("Suma nealocată (Cash)", f"{k_cash:,.2f} {tc}")
-k3.metric("Câștig din Earn", f"+{k_earn:,.4f} {tc}")
+st.divider()
+hk1, hk2 = st.columns((6.8, 1.2))
+hk1.subheader("🪙 Portofoliu Kraken")
+if hk2.button("📥 Importă Kraken", use_container_width=True): st.session_state.imp_k4 = not st.session_state.imp_k4; st.session_state.imp_x4 = False
+
+if st.session_state.imp_k4:
+    with st.container(border=True):
+        f_krk = st.file_uploader("Încarcă rapoarte Kraken Libro mayor (.csv):", type="csv", accept_multiple_files=True, key="s_krk")
+        if f_krk and st.button("Procesează și Actualizează Tot Kraken", type="primary"):
+            for fk in f_krk:
+                kdf_n, kc, kd, kw = parse_krk_all(fk)
+                if not kdf_n.empty: save_csv_permanent(kdf_n.reindex(columns=req), KRK_CSV)
+                if kc is not None: stats["krk_cash"] = kc
