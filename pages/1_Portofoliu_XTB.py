@@ -1,59 +1,21 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import csv, io
 from pathlib import Path
-from utils import save_csv_permanent, get_meta, fetch_data, fetch_annual_dividends, c_pnl, c_rsi, f_price, f_shares, f_num2, f_rsi, f_sma, f_pct, clean_table, quick_del
+from utils import save_csv_permanent, fetch_data, fetch_annual_dividends, c_pnl, c_rsi, f_price, f_shares, f_num2, f_rsi, f_sma, f_pct, clean_table, quick_del
 
 st.set_page_config(page_title="Portofoliu XTB", layout="wide")
-CSV_PATH = Path(__file__).resolve().parent.parent / "portfolio.csv"
-CLOSED_DIVS_EUR = 18.24
+BASE = Path(__file__).resolve().parent.parent
+CSV_PATH, STATS_CSV = BASE / "portfolio.csv", BASE / "summary_stats.csv"
 
-def clean_tk(t):
-    return str(t).replace(".US", "").replace(".UK", ".L").replace(".ES", ".MC").replace(".IT", ".MI").strip()
+st.markdown("<style>div[data-testid='stButton'] button p {font-size: 16px !important; font-weight: 700 !important;}</style>", unsafe_allow_html=True)
 
-def gcol(r, i):
-    return str(list(r)[i]).strip() if len(r) > i else ""
-
-def parse_xtb(up_f, old_df):
-    raw = up_f.getvalue().decode("utf-8", errors="ignore")
-    divs, rows, mode = {}, [], ""
-    for r in csv.reader(io.StringIO(raw)):
-        if not r: continue
-        f = gcol(r, 0)
-        if f == "Type" and gcol(r, 5) == "Amount": mode = "cash"; continue
-        if f == "Product" and gcol(r, 8) == "Open price": mode = "open"; continue
-        if f in ("Total", "Account number", "Note"): mode = ""; continue
-        if mode == "cash" and gcol(r, 0) in ("Dividend", "Withholding tax") and gcol(r, 2):
-            tk = clean_tk(gcol(r, 2))
-            try: divs[tk] = divs.get(tk, 0.0) + float(gcol(r, 5))
-            except ValueError: pass
-        elif mode == "open" and gcol(r, 0) in ("My Trades", "Investment Plan") and gcol(r, 2) and gcol(r, 3):
-            rtk = gcol(r, 2)
-            tk = clean_tk(rtk)
-            if "CVR" in tk or "US931" in tk: continue
-            try: vol, bp = float(gcol(r, 5)), float(gcol(r, 8))
-            except ValueError: continue
-            m = old_df[old_df["Ticker"].astype(str) == tk] if not old_df.empty else pd.DataFrame()
-            if not m.empty:
-                comp, sec, curr = str(next(iter(m["Company"]))), str(next(iter(m["Sector"]))), str(next(iter(m["Currency"])))
-            else:
-                comp, sec, curr = get_meta(tk)
-                if rtk.endswith(".UK"): curr = "USD" if any(x in tk for x in ("ISLN", "EGLN", "SGLD", "COPX")) else "GBP"
-            rows.append(dict(Ticker=tk, Company=comp, Sector=sec, Shares=vol, Buy=bp, Cur=bp, Currency=curr, Div=round(max(divs.get(tk, 0.0), 0.0), 2)))
-    if not rows: return pd.DataFrame()
-    rdf = pd.DataFrame(rows)
-    out = []
-    for tk, g in rdf.groupby("Ticker", sort=False):
-        sh = g["Shares"].sum()
-        ab = (g["Shares"] * g["Buy"]).sum() / sh if sh > 0 else 0.0
-        out.append({"Ticker": str(tk), "Company": str(next(iter(g["Company"]))), "Sector": str(next(iter(g["Sector"]))), "Shares": round(float(sh), 6), "Buy Price": round(float(ab), 4), "Current Price": round(float(ab), 4), "Currency": str(next(iter(g["Currency"]))), "Dividends EUR": float(next(iter(g["Div"])))})
-    return pd.DataFrame(out)
-
-if "imp_xtb" not in st.session_state: st.session_state.imp_xtb = False
-n1, n2, _ = st.columns((1.2, 1.2, 5.6))
+n1, n2, n3, n4 = st.columns(4)
 if n1.button("⬅️ Meniu Principal", use_container_width=True): st.switch_page("app.py")
-if n2.button("📥 Importă XTB", use_container_width=True): st.session_state.imp_xtb = not st.session_state.imp_xtb
+if n2.button("🪙 Portofoliu Kraken", use_container_width=True): st.switch_page("pages/2_Portofoliu_Kraken.py")
+if n3.button("👁️ Urmărește", use_container_width=True): st.switch_page("pages/3_Urmareste.py")
+if n4.button("📊 XTB   Kraken", use_container_width=True): st.switch_page("pages/4_XTB_Kraken.py")
+
 if st.sidebar.button("🔄 Actualizează prețurile live"): st.cache_data.clear(); st.rerun()
 
 req = ["Ticker", "Company", "Sector", "Shares", "Buy Price", "Current Price", "Currency", "Dividends EUR"]
@@ -61,19 +23,12 @@ df = pd.read_csv(CSV_PATH).fillna("") if CSV_PATH.exists() else pd.DataFrame(col
 for c in req:
     if c not in df.columns: df[c] = 0.0 if c in ("Shares", "Buy Price", "Current Price", "Dividends EUR") else ""
 
-if st.session_state.imp_xtb:
-    with st.container(border=True):
-        up_f = st.file_uploader("Încarcă raportul CSV din XTB:", type="csv", key="up_xtb")
-        if up_f is not None and st.button("Procesează și Salvează Permanent", type="primary"):
-            ndf = parse_xtb(up_f, df)
-            if not ndf.empty:
-                ok = save_csv_permanent(ndf.reindex(columns=req), CSV_PATH)
-                st.session_state.imp_xtb = False
-                st.cache_data.clear()
-                st.success("Salvat permanent!" if ok else "Salvat local!")
-                st.rerun()
-            else: st.error("Nu am găsit poziții deschise valide.")
-
+ediv_eur = 23.99
+if STATS_CSV.exists():
+    try:
+        for _, r in pd.read_csv(STATS_CSV).iterrows():
+            if str(r.get("key", "")) == "xtb_closed_divs": ediv_eur = float(r.get("val", 23.99))
+    except Exception: pass
 st.title("📈 Portofoliu XTB")
 df = df[df["Ticker"].astype(str).str.strip() != ""].copy()
 tks = df["Ticker"].astype(str).unique().tolist()
@@ -82,7 +37,7 @@ prices, _, rsim, smam, fx = fetch_data(tks, list(set(acurr + ["EUR", "USD", "GBP
 adiv = fetch_annual_dividends(tks)
 
 for c in ("Shares", "Buy Price", "Current Price", "Dividends EUR"):
-    df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0).astype(float)
+    df[c] = pd.to_numeric(df.get(c, 0.0), errors="coerce").fillna(0.0).astype(float)
 
 df["Current Price"] = np.where(df["Ticker"].map(prices).notna(), df["Ticker"].map(prices), df["Current Price"]).astype(float)
 df["RSI"] = pd.to_numeric(df["Ticker"].map(rsim), errors="coerce").astype(float)
@@ -106,7 +61,7 @@ df["PnL"] = (df["Mkt"] - df["Inv"]) + df["Div"]
 df["Ret"] = np.where(df["Inv"] != 0, df["PnL"] / df["Inv"] * 100, 0.0).astype(float)
 
 v = df.copy() if cf == "Toate (Consolidat)" else df[df["Currency"] == cf].copy()
-ediv = (CLOSED_DIVS_EUR * er) if cf == "Toate (Consolidat)" else 0.0
+ediv = (ediv_eur * er) if cf == "Toate (Consolidat)" else 0.0
 tmkt = v["Mkt"].sum()
 v["Wgt"] = np.where(tmkt != 0, v["Mkt"] / tmkt * 100, 0.0).astype(float)
 
@@ -117,16 +72,18 @@ v = v.sort_values(by=cs, ascending=ascs, na_position="last")
 invs, mkts, divs = float(v["Inv"].sum()), float(v["Mkt"].sum()), float(v["Div"].sum() + ediv)
 adivs = float(v["Ann_Div"].sum())
 pyoc = (adivs / invs * 100) if invs > 0 else 0.0
-gp = float(v[v["PnL"] > 0]["PnL"].sum() + ediv)
-gl = float(v[v["PnL"] < 0]["PnL"].sum())
+net_pnl = (mkts - invs) + divs
+net_ret = (net_pnl / invs * 100) if invs > 0 else 0.0
+gp, gl = float(v[v["PnL"] > 0]["PnL"].sum() + ediv), float(v[v["PnL"] < 0]["PnL"].sum())
 
-c1, c2, c3, c4, c5, c6 = st.columns(6)
+c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
 c1.metric("Poziții", f"{len(v)}")
 c2.metric("Capital investit", f"{invs:,.2f} {tc}")
 c3.metric("Valoare piață", f"{mkts:,.2f} {tc}")
-c4.metric("Dividende nete", f"{divs:,.2f} {tc}", f"~{adivs:,.2f} {tc}/an (YoC {pyoc:.2f}%)")
-c5.metric("Profit Total (Poz.)", f"+{gp:,.2f} {tc}", f"{len(v[v['PnL'] > 0])} pe plus", delta_color="normal")
-c6.metric("Pierdere Totală (Neg.)", f"{gl:,.2f} {tc}", f"-{len(v[v['PnL'] < 0])} pe minus", delta_color="normal")
+c4.metric("Randament Net Total", f"{net_pnl:+,.2f} {tc}", f"{net_ret:+.2f}%")
+c5.metric("Dividende nete", f"{divs:,.2f} {tc}", f"~{adivs:,.2f} {tc}/an (YoC {pyoc:.2f}%)")
+c6.metric("Profit Total (Poz.)", f"+{gp:,.2f} {tc}", f"{len(v[v['PnL'] > 0])} pe plus", delta_color="normal")
+c7.metric("Pierdere Totală (Neg.)", f"{gl:,.2f} {tc}", f"-{len(v[v['PnL'] < 0])} pe minus", delta_color="normal")
 
 fyoc = lambda x: "" if (pd.isna(x) or x == "" or float(x) <= 0) else f"{float(x):.2f}%"
 
