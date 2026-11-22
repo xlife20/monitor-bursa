@@ -23,7 +23,7 @@ def tr_ro(txt):
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=8) as r:
             res = json.loads(r.read().decode("utf-8"))
-            return "".join([x for x in res if x and x])
+            return "".join([x[0] for x in res[0] if x and x[0]])
     except Exception:
         return s
 
@@ -120,12 +120,13 @@ fyoc = lambda x: "" if (pd.isna(x) or x == "" or float(x) <= 0) else f"{float(x)
 f_avg = lambda x: "" if (pd.isna(x) or x == "" or float(x) <= 0) else f_price(x)
 
 if st.session_state.an_flt == "sma":
-    sub = df[df["SMA_Pct"].notna() & (df["SMA_Pct"] < 0)].sort_values(by="SMA_Pct", ascending=True).head(5)
+    sub = df[df["SMA_Pct"].notna() & (df["SMA_Pct"] < 0)].sort_values(by="SMA_Pct", ascending=True).head(5).reset_index(drop=True)
     st.subheader("📊 Top 5 Acțiuni sub SMA 200 (De la cea mai mare scădere)")
 else:
-    sub = df[df["RSI"].notna() & (df["RSI"] < 30)].sort_values(by="RSI", ascending=True).head(5)
+    sub = df[df["RSI"].notna() & (df["RSI"] < 30)].sort_values(by="RSI", ascending=True).head(5).reset_index(drop=True)
     st.subheader("📉 Top 5 Acțiuni cu RSI < 30 (Crescător)")
 
+clicked_tk = None
 if sub.empty:
     st.info("Nicio acțiune nu îndeplinește criteriul selectat în acest moment.")
 else:
@@ -134,12 +135,20 @@ else:
     disp.columns = ["Tiker", "Companie", "Monedă", "Sector", "vs Preț mediu %", "Preț mediu", "Preț curent", "Min 52 săpt.", "Max 52 săpt.", "P/E Ratio", "Dividend AN%", "RSI (14)", "vs SMA 200 %", "Variație azi %"]
     fmt = {"Preț mediu": f_avg, "Preț curent": f_price, "Min 52 săpt.": f_price, "Max 52 săpt.": f_price, "Dividend AN%": fyoc, "RSI (14)": f_rsi, "vs SMA 200 %": f_sma, "vs Preț mediu %": f_pct, "Variație azi %": f_pct}
     styler = clean_table(disp, fmt).style.map(c_pnl, subset=["vs Preț mediu %", "vs SMA 200 %", "Variație azi %"]).map(c_rsi, subset=["RSI (14)"])
-    st.dataframe(styler, use_container_width=True, hide_index=True, height=230, column_config={"Tiker": st.column_config.TextColumn("Tiker", pinned=True)})
+    ev = st.dataframe(styler, use_container_width=True, hide_index=True, height=230, on_select="rerun", selection_mode="single-row", column_config={"Tiker": st.column_config.TextColumn("Tiker", pinned=True)})
+    if ev and ev.selection and ev.selection.rows:
+        r_idx = ev.selection.rows[0]
+        if r_idx < len(sub):
+            clicked_tk = str(sub.iloc[r_idx]["Ticker"])
 
 st.divider()
 v_sorted = df.sort_values(by="Ticker", ascending=True)
-if not v_sorted.empty:
-    sel_info = st.selectbox("🏢 Vezi detalii despre o companie din Watchlist:", ["Alege un tiker..."] + v_sorted["Ticker"].astype(str).tolist(), key="an_info_sel")
-    if sel_info != "Alege un tiker...":
-        ok_i, det_i = get_company_details_ro(sel_info)
+all_tks = v_sorted["Ticker"].astype(str).tolist()
+if all_tks:
+    opts = ["Alege un tiker..."] + all_tks
+    def_idx = opts.index(clicked_tk) if (clicked_tk and clicked_tk in opts) else 0
+    sel_info = st.selectbox("🏢 Detalii companie (dă clic pe un rând din tabel sau alege din listă):", opts, index=def_idx, key="an_info_sel")
+    target_tk = clicked_tk or (sel_info if sel_info != "Alege un tiker..." else None)
+    if target_tk:
+        ok_i, det_i = get_company_details_ro(target_tk)
         if ok_i: render_company_card(det_i)
