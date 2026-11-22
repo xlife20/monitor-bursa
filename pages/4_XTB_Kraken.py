@@ -146,18 +146,27 @@ def parse_krk_all(up_f):
     er = kdf[kdf["norm"] == "EUR"]
     return pd.DataFrame(rows), (round(float((er["amount"] - er["fee"]).sum()), 2) if not er.empty else None)
 
-if st.button("⬅️ Meniu Principal"): st.switch_page("app.py")
+for k_ss in ("imp_x4", "imp_k4"):
+    if k_ss not in st.session_state: st.session_state[k_ss] = False
+
+n1, n2, n3, n4, n5, n6 = st.columns((1.2, 1.2, 1.2, 1.1, 1.1, 1.1))
+if n1.button("⬅️ Meniu Principal", use_container_width=True): st.switch_page("app.py")
+if n2.button("📈 Portofoliu XTB", use_container_width=True): st.switch_page("pages/1_Portofoliu_XTB.py")
+if n3.button("🪙 Portofoliu Kraken", use_container_width=True): st.switch_page("pages/2_Portofoliu_Kraken.py")
+if n4.button("👁️ Urmărește", use_container_width=True): st.switch_page("pages/3_Urmareste.py")
+if n5.button("📥 Importă XTB", use_container_width=True): st.session_state.imp_x4 = not st.session_state.imp_x4; st.session_state.imp_k4 = False
+if n6.button("📥 Importă Kraken", use_container_width=True): st.session_state.imp_k4 = not st.session_state.imp_k4; st.session_state.imp_x4 = False
+
 if st.sidebar.button("🔄 Actualizează prețurile live"): st.cache_data.clear(); st.rerun()
-st.title("📊 Sinteză Completă: XTB + Kraken")
+st.markdown("<h1 style='text-align:center;margin-top:4px;margin-bottom:14px;'>XTB &nbsp;&nbsp; Kraken</h1>", unsafe_allow_html=True)
+
 tc, stats = st.sidebar.selectbox("Monedă raportare", ("EUR", "USD", "GBP")), load_stats()
 req = ["Ticker", "Company", "Sector", "Shares", "Buy Price", "Current Price", "Currency", "Dividends EUR"]
 
-with st.container(border=True):
-    st.subheader("📤 Încarcă rapoartele (Poți selecta mai multe fișiere XTB odată)")
-    u1, u2 = st.columns(2)
-    with u1:
-        f_xtb = st.file_uploader("Rapoarte XTB (.xlsx sau .csv):", type=["xlsx", "csv"], accept_multiple_files=True, key="s_xtb")
-        if f_xtb and st.button("Actualizează Tot XTB", type="primary"):
+if st.session_state.imp_x4:
+    with st.container(border=True):
+        f_xtb = st.file_uploader("Încarcă rapoarte XTB (.xlsx sau .csv):", type=["xlsx", "csv"], accept_multiple_files=True, key="s_xtb")
+        if f_xtb and st.button("Procesează și Actualizează Tot XTB", type="primary"):
             old_x = pd.read_csv(XTB_CSV).fillna("") if XTB_CSV.exists() else pd.DataFrame(columns=req)
             ndf, ff, cpnl, cdiv, dep, wth, inve, bmkt = parse_xtb_files(f_xtb, old_x)
             if not ndf.empty: save_csv_permanent(ndf.reindex(columns=req), XTB_CSV)
@@ -168,15 +177,17 @@ with st.container(border=True):
             if wth > 0: stats["xtb_with"] = wth
             if inve is not None: stats["xtb_inv_eur"] = inve
             if bmkt is not None: stats["xtb_base_mkt"] = bmkt
-            save_stats(stats); st.cache_data.clear(); st.rerun()
-    with u2:
-        f_krk = st.file_uploader("Rapoarte Kraken Libro mayor (.csv):", type="csv", accept_multiple_files=True, key="s_krk")
-        if f_krk and st.button("Actualizează Tot Kraken", type="primary"):
+            save_stats(stats); st.session_state.imp_x4 = False; st.cache_data.clear(); st.rerun()
+
+if st.session_state.imp_k4:
+    with st.container(border=True):
+        f_krk = st.file_uploader("Încarcă rapoarte Kraken Libro mayor (.csv):", type="csv", accept_multiple_files=True, key="s_krk")
+        if f_krk and st.button("Procesează și Actualizează Tot Kraken", type="primary"):
             for fk in f_krk:
                 kdf_n, kc = parse_krk_all(fk)
                 if not kdf_n.empty: save_csv_permanent(kdf_n.reindex(columns=req), KRK_CSV)
                 if kc is not None: stats["krk_cash"] = kc
-            save_stats(stats); st.cache_data.clear(); st.rerun()
+            save_stats(stats); st.session_state.imp_k4 = False; st.cache_data.clear(); st.rerun()
 
 def read_port(csv_p, is_xtb=False):
     if not csv_p.exists(): return 0.0, 0.0, 0.0, 0.0, {"EUR": 1.08, "USD": 1.0, "GBP": 1.27}
@@ -211,8 +222,7 @@ x_val_cont = x_mkt + x_cash
 x_net_real = (x_val_cont + x_with) - x_dep
 k_cash, k_prof = stats["krk_cash"] * er, (k_mkt - k_inv) + k_earn
 
-is_wknd_now = pd.Timestamp.now(tz="Europe/Madrid").weekday() >= 5
-st.subheader(f"📈 Portofoliu XTB — Reconciliere Live ({tc})" + (" • ⏸️ Piață închisă (Weekend)" if is_wknd_now else ""))
+st.subheader("📈 Portofoliu XTB")
 cols_info = [
     ("1. Total<br>Depus", f"{x_dep:,.2f}", "Toate depunerile efectuate în contul XTB"),
     ("2. Total<br>Retras", f"-{x_with:,.2f}", "Bani scoși deja din contul XTB în bancă"),
@@ -235,11 +245,3 @@ k1, k2, k3, k4 = st.columns(4)
 k1.metric("Suma investită", f"{k_inv:,.2f} {tc}", f"Piață: {k_mkt:,.2f} {tc}")
 k2.metric("Suma nealocată (Cash)", f"{k_cash:,.2f} {tc}")
 k3.metric("Câștig din Earn", f"+{k_earn:,.4f} {tc}")
-k4.metric("Profit actualizat Kraken", f"{k_prof:+,.2f} {tc}", f"{((k_prof / k_inv * 100) if k_inv > 0 else 0.0):+.2f}%")
-
-st.divider(); st.subheader("🌐 Total General (XTB + Kraken)")
-g1, g2, g3, g4 = st.columns(4)
-g1.metric("Total Investit", f"{(x_inv + k_inv):,.2f} {tc}")
-g2.metric("Total Cash Nealocat", f"{(x_cash + k_cash):,.2f} {tc}")
-g3.metric("Valoare Totală Conturi", f"{(x_val_cont + k_mkt + k_cash):,.2f} {tc}")
-g4.metric("Profit Net Cumulat", f"{(x_net_real + k_prof):+,.2f} {tc}")
