@@ -137,7 +137,7 @@ def parse_krk_all(up_f):
             cr, fr = g[~g["norm"].isin({"EUR", "USD", "GBP"}) & g["type"].isin(("trade", "spend", "receive"))], g[g["norm"].isin({"EUR", "USD", "GBP"}) & g["type"].isin(("trade", "spend", "receive"))]
             if not cr.empty and not fr.empty and float(cr["amount"].sum()) > 0:
                 ca = str(next(iter(cr["norm"]))); cost[ca] = cost.get(ca, 0.0) + abs(float(fr["amount"].sum())) + float(fr["fee"].sum())
-    rows = [{"Ticker": f"{a}-EUR", "Company": get_meta(f"{a}-EUR"), "Sector": "Crypto", "Shares": round(sh, 8), "Buy Price": round((cost.get(a, 0.0) / sh) if cost.get(a, 0.0) > 0 else 0.0, 4), "Current Price": round((cost.get(a, 0.0) / sh) if cost.get(a, 0.0) > 0 else 0.0, 4), "Currency": "EUR", "Dividends EUR": round(rew.get(a, 0.0), 4)} for a, sh in hold.items() if sh > 1e-7]
+    rows = [{"Ticker": f"{a}-EUR", "Company": get_meta(f"{a}-EUR")[0], "Sector": "Crypto", "Shares": round(sh, 8), "Buy Price": round((cost.get(a, 0.0) / sh) if cost.get(a, 0.0) > 0 else 0.0, 4), "Current Price": round((cost.get(a, 0.0) / sh) if cost.get(a, 0.0) > 0 else 0.0, 4), "Currency": "EUR", "Dividends EUR": round(rew.get(a, 0.0), 4)} for a, sh in hold.items() if sh > 1e-7]
     er = kdf[kdf["norm"] == "EUR"]
     return pd.DataFrame(rows), (round(float((er["amount"] - er["fee"]).sum()), 2) if not er.empty else None)
 
@@ -199,21 +199,22 @@ k_cash, k_prof = stats["krk_cash"] * er, (k_mkt - k_inv) + k_earn
 
 st.subheader(f"📈 Portofoliu XTB — Reconciliere Completă ({tc})")
 cols_info = [
-    ("1. Total<br>Depus", f"{x_dep:,.2f}", "Toate depunerile efectuate în contul XTB (3.151,00 EUR)"),
-    ("2. Total<br>Retras", f"-{x_with:,.2f}", "Bani scoși deja din contul XTB în bancă (376,00 EUR)"),
-    ("3. Capital<br>Net", f"{x_net_dep:,.2f}", "Depuneri minus retrageri (2.775,00 EUR banii tăi activi)"),
+    ("1. Total<br>Depus", f"{x_dep:,.2f}", "Toate depunerile efectuate în contul XTB"),
+    ("2. Total<br>Retras", f"-{x_with:,.2f}", "Bani scoși deja din contul XTB în bancă"),
+    ("3. Capital<br>Net", f"{x_net_dep:,.2f}", "Depuneri minus retrageri (banii tăi rămași activi)"),
     ("4. Profit<br>Vânzări", f"{x_cpnl:+,.2f}", "Diferența netă dintre prețul de vânzare și cost (poziții închise)"),
     ("5. Dividende<br>& Dobânzi", f"+{x_tdivs:,.2f}", "Dividende nete încasate + dobânda la fondurile libere"),
     ("6. Profit<br>Reinvestit", f"+{x_reinv:,.2f}", "Câștig din vânzări și dividende folosit pentru a cumpăra acțiuni noi"),
     ("7. Fonduri<br>Libere", f"{x_cash:,.2f}", "Suma nealocată (Cash lichid disponibil în contul XTB)"),
     ("8. Investit<br>Activ", f"{x_inv:,.2f}", "Costul de achiziție al acțiunilor deținute (Capital Net + Reinvestit)"),
-    ("9. Valoare<br>Piață", f"{x_mkt:,.2f}", f"Valoarea actuală a acțiunilor/ETF-urilor (Profit deschise: {x_unr:+,.2f} {tc})"),
-    ("10. Valoare<br>Cont XTB", f"{x_val_cont:,.2f}", "Valoare Piață + Fonduri Libere (exact soldul afișat în XTB)"),
-    ("11. Total +<br>Retrageri", f"{x_val_tot_cu_retr:,.2f}", "Valoare Cont XTB + Total Retras în bancă"),
-    ("12. PROFIT<br>NET REAL", f"{x_net_real:+,.2f}", f"Total + Retrageri ({x_val_tot_cu_retr:,.2f}) minus Total Depus ({x_dep:,.2f})")
+    ("9. Valoare<br>Piață", f"{x_mkt:,.2f}", "Valoarea actuală pe bursă a acțiunilor și ETF-urilor deținute"),
+    ("10. Profit /<br>Pierdere", f"{x_unr:+,.2f}", "Diferența dintre Valoare Piață și Investit Activ pe pozițiile deschise"),
+    ("11. Valoare<br>Cont XTB", f"{x_val_cont:,.2f}", "Valoare Piață + Fonduri Libere (exact soldul afișat în XTB)"),
+    ("12. Total +<br>Retrageri", f"{x_val_tot_cu_retr:,.2f}", "Valoare Cont XTB + Total Retras în bancă"),
+    ("13. PROFIT<br>NET REAL", f"{x_net_real:+,.2f}", f"Total + Retrageri ({x_val_tot_cu_retr:,.2f}) minus Total Depus ({x_dep:,.2f})")
 ]
-ths = "".join([f"<th title='{tip}' style='border:1px solid #333;padding:6px 4px;text-align:center;font-weight:bold;background:#1e222d;color:#fff;font-size:12px;line-height:1.25;cursor:help;'>{lbl}</th>" for lbl, _, tip in cols_info])
-tds = "".join([f"<td title='{tip}' style='border:1px solid #333;padding:8px 4px;text-align:center;font-weight:bold;font-size:13px;color:{('#00e676' if str(val).startswith('+') else ('#ff5252' if str(val).startswith('-') else '#e0e0e0'))};'>{val}</td>" for _, val, tip in cols_info])
+ths = "".join([f"<th title='{tip}' style='border:1px solid #333;padding:6px 2px;text-align:center;font-weight:bold;background:#1e222d;color:#fff;font-size:11px;line-height:1.25;cursor:help;'>{lbl}</th>" for lbl, _, tip in cols_info])
+tds = "".join([f"<td title='{tip}' style='border:1px solid #333;padding:8px 2px;text-align:center;font-weight:bold;font-size:12px;color:{('#00e676' if str(val).startswith('+') else ('#ff5252' if str(val).startswith('-') else '#e0e0e0'))};'>{val}</td>" for _, val, tip in cols_info])
 st.markdown(f"<table style='width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:10px;'><thead><tr>{ths}</tr></thead><tbody><tr>{tds}</tr></tbody></table>", unsafe_allow_html=True)
 
 st.divider(); st.subheader("🪙 Portofoliu Kraken")
