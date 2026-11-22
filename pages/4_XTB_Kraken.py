@@ -30,80 +30,83 @@ def load_stats():
 
 def save_stats(d): return save_csv_permanent(pd.DataFrame([{"key": k, "val": round(float(v), 4)} for k, v in d.items()]), STATS_CSV)
 
-def parse_xtb_all(up_f, old_df):
-    rows = []
-    if up_f.name.lower().endswith(".xlsx"):
-        xl = pd.ExcelFile(up_f)
-        for sh in xl.sheet_names:
-            for _, r in xl.parse(sh, header=None).fillna("").iterrows(): rows.append([str(x).strip() for x in r.tolist()])
-    else:
-        for r in csv.reader(io.StringIO(up_f.getvalue().decode("utf-8", errors="ignore"))): rows.append([str(x).strip() for x in r])
+def parse_xtb_files(files_list, old_df):
+    divs, open_rows, tot_cpnl, tot_ff, has_ff = {}, [], 0.0, 0.0, False
+    for up_f in files_list:
+        rows = []
+        if up_f.name.lower().endswith(".xlsx"):
+            xl = pd.ExcelFile(up_f)
+            for sh in xl.sheet_names:
+                for _, r in xl.parse(sh, header=None).fillna("").iterrows(): rows.append([str(x).strip() for x in r.tolist()])
+        else:
+            for r in csv.reader(io.StringIO(up_f.getvalue().decode("utf-8", errors="ignore"))): rows.append([str(x).strip() for x in r])
 
-    divs, open_rows, mode, cpnl, ff = {}, [], "", 0.0, None
-    pidx, tidx, vidx, oidx, aidx, yidx = 10, 2, 5, 8, 5, 0
-    for r in rows:
-        if not r or all(x == "" for x in r): continue
-        low = [x.lower() for x in r]
-        c0 = gcol(r, 0).lower()
+        mode, file_cpnl, pidx, tidx, vidx, oidx, aidx, yidx = "", 0.0, 10, 2, 5, 8, 5, 0
+        for r in rows:
+            if not r or all(x == "" for x in r): continue
+            low, c0 = [x.lower() for x in r], gcol(r, 0).lower()
+            for i, c in enumerate(low):
+                if any(k in c for k in ("free funds", "fondos libres", "saldo libre", "margen libre")):
+                    for nxt in r[i + 1:]:
+                        v = to_num(nxt)
+                        if v is not None: tot_ff += v; has_ff = True; break
 
-        if "instrument" in low and "profit/loss" in low and "close time (utc)" in low:
-            mode = "closed"
-            for i, cn in enumerate(low):
-                if cn == "profit/loss": pidx = i; break
-            continue
-        if "type" in low and "amount" in low and "comment" in low:
-            mode = "cash"
-            for i, cn in enumerate(low):
-                if cn == "type": yidx = i
-                elif cn == "ticker": tidx = i
-                elif cn == "amount": aidx = i
-            continue
-        if "product" in low and "open price" in low and "volume" in low:
-            mode = "open"
-            for i, cn in enumerate(low):
-                if cn == "ticker": tidx = i
-                elif cn == "volume": vidx = i
-                elif cn == "open price": oidx = i
-            continue
+            if "instrument" in low and "profit/loss" in low and "close time (utc)" in low:
+                mode = "closed"
+                for i, cn in enumerate(low):
+                    if cn == "profit/loss": pidx = i; break
+                continue
+            if "type" in low and "amount" in low and "comment" in low:
+                mode = "cash"
+                for i, cn in enumerate(low):
+                    if cn == "type": yidx = i
+                    elif cn == "ticker": tidx = i
+                    elif cn == "amount": aidx = i
+                continue
+            if "product" in low and "open price" in low and "volume" in low:
+                mode = "open"
+                for i, cn in enumerate(low):
+                    if cn == "ticker": tidx = i
+                    elif cn == "volume": vidx = i
+                    elif cn == "open price": oidx = i
+                continue
 
-        if mode == "closed":
-            if c0.startswith("profit/loss") or c0.startswith("total"):
-                v = to_num(gcol(r, pidx))
-                if v is not None and v != 0: cpnl = v
-                mode = ""; continue
-            if c0 not in ("", "instrument"):
-                v = to_num(gcol(r, pidx))
-                if v is not None: cpnl += v
-
-        elif mode == "cash":
-            if c0 == "total":
-                v = to_num(gcol(r, aidx))
-                if v is not None: ff = v
-                mode = ""; continue
-            ot, amt, tk = gcol(r, yidx).lower(), to_num(gcol(r, aidx)), clean_tk(gcol(r, tidx))
-            if amt is not None and tk and any(k in ot for k in ("dividend", "withholding")):
-                divs[tk] = divs.get(tk, 0.0) + amt
-
-        elif mode == "open":
-            if c0 in ("account number", "total", "note"): mode = ""; continue
-            if gcol(r, 0) in ("My Trades", "Investment Plan", "Investment Plans") and gcol(r, 3) != "":
-                rtk = gcol(r, tidx); tk = clean_tk(rtk)
-                if not tk or "CVR" in tk or "US931" in tk: continue
-                vol, bp = to_num(gcol(r, vidx)), to_num(gcol(r, oidx))
-                if vol is None or bp is None or vol <= 0: continue
-                m = old_df[old_df["Ticker"].astype(str) == tk] if not old_df.empty else pd.DataFrame()
-                if not m.empty: comp, sec, curr = str(next(iter(m["Company"]))), str(next(iter(m["Sector"]))), str(next(iter(m["Currency"])))
-                else:
-                    comp, sec, curr = get_meta(tk)
-                    if rtk.endswith(".UK"): curr = "USD" if any(x in tk for x in ("ISLN", "EGLN", "SGLD", "COPX")) else "GBP"
-                open_rows.append(dict(Ticker=tk, Company=comp, Sector=sec, Shares=vol, Buy=bp, Currency=curr))
+            if mode == "closed":
+                if c0.startswith("profit/loss") or c0.startswith("total"):
+                    v = to_num(gcol(r, pidx))
+                    if v is not None and v != 0: file_cpnl = v
+                    mode = ""; continue
+                if c0 not in ("", "instrument"):
+                    v = to_num(gcol(r, pidx))
+                    if v is not None: file_cpnl += v
+            elif mode == "cash":
+                if c0 == "total":
+                    v = to_num(gcol(r, aidx))
+                    if v is not None: tot_ff += v; has_ff = True
+                    mode = ""; continue
+                ot, amt, tk = gcol(r, yidx).lower(), to_num(gcol(r, aidx)), clean_tk(gcol(r, tidx))
+                if amt is not None and tk and any(k in ot for k in ("dividend", "withholding")): divs[tk] = divs.get(tk, 0.0) + amt
+            elif mode == "open":
+                if c0 in ("account number", "total", "note"): mode = ""; continue
+                if gcol(r, 0) in ("My Trades", "Investment Plan", "Investment Plans") and gcol(r, 3) != "":
+                    rtk = gcol(r, tidx); tk = clean_tk(rtk)
+                    if not tk or "CVR" in tk or "US931" in tk: continue
+                    vol, bp = to_num(gcol(r, vidx)), to_num(gcol(r, oidx))
+                    if vol is None or bp is None or vol <= 0: continue
+                    m = old_df[old_df["Ticker"].astype(str) == tk] if not old_df.empty else pd.DataFrame()
+                    if not m.empty: comp, sec, curr = str(next(iter(m["Company"]))), str(next(iter(m["Sector"]))), str(next(iter(m["Currency"])))
+                    else:
+                        comp, sec, curr = get_meta(tk)
+                        if rtk.endswith(".UK"): curr = "USD" if any(x in tk for x in ("ISLN", "EGLN", "SGLD", "COPX")) else "GBP"
+                    open_rows.append(dict(Ticker=tk, Company=comp, Sector=sec, Shares=vol, Buy=bp, Currency=curr))
+        tot_cpnl += file_cpnl
 
     out, oset = [], set()
     if open_rows:
         for tk, g in pd.DataFrame(open_rows).groupby("Ticker", sort=False):
             oset.add(tk); sh = g["Shares"].sum(); ab = (g["Shares"] * g["Buy"]).sum() / sh if sh > 0 else 0.0
             out.append({"Ticker": str(tk), "Company": str(next(iter(g["Company"]))), "Sector": str(next(iter(g["Sector"]))), "Shares": round(float(sh), 6), "Buy Price": round(float(ab), 4), "Current Price": round(float(ab), 4), "Currency": str(next(iter(g["Currency"]))), "Dividends EUR": round(max(divs.get(tk, 0.0), 0.0), 2)})
-    return pd.DataFrame(out), ff, round(cpnl, 2), round(sum(max(v, 0.0) for k, v in divs.items() if k not in oset), 2)
+    return pd.DataFrame(out), (round(tot_ff, 2) if has_ff else None), round(tot_cpnl, 2), round(sum(max(v, 0.0) for k, v in divs.items() if k not in oset), 2)
 def parse_krk_all(up_f):
     kdf = pd.read_csv(up_f); kdf.columns = kdf.columns.str.lower().str.strip()
     if not {"asset", "amount", "type"}.issubset(set(kdf.columns)): return pd.DataFrame(), None
@@ -124,7 +127,7 @@ def parse_krk_all(up_f):
             cr, fr = g[~g["norm"].isin({"EUR", "USD", "GBP"}) & g["type"].isin(("trade", "spend", "receive"))], g[g["norm"].isin({"EUR", "USD", "GBP"}) & g["type"].isin(("trade", "spend", "receive"))]
             if not cr.empty and not fr.empty and float(cr["amount"].sum()) > 0:
                 ca = str(next(iter(cr["norm"]))); cost[ca] = cost.get(ca, 0.0) + abs(float(fr["amount"].sum())) + float(fr["fee"].sum())
-    rows = [{"Ticker": f"{a}-EUR", "Company": get_meta(f"{a}-EUR"), "Sector": "Crypto", "Shares": round(sh, 8), "Buy Price": round((cost.get(a, 0.0) / sh) if cost.get(a, 0.0) > 0 else 0.0, 4), "Current Price": round((cost.get(a, 0.0) / sh) if cost.get(a, 0.0) > 0 else 0.0, 4), "Currency": "EUR", "Dividends EUR": round(rew.get(a, 0.0), 4)} for a, sh in hold.items() if sh > 1e-7]
+    rows = [{"Ticker": f"{a}-EUR", "Company": get_meta(f"{a}-EUR")[0], "Sector": "Crypto", "Shares": round(sh, 8), "Buy Price": round((cost.get(a, 0.0) / sh) if cost.get(a, 0.0) > 0 else 0.0, 4), "Current Price": round((cost.get(a, 0.0) / sh) if cost.get(a, 0.0) > 0 else 0.0, 4), "Currency": "EUR", "Dividends EUR": round(rew.get(a, 0.0), 4)} for a, sh in hold.items() if sh > 1e-7]
     er = kdf[kdf["norm"] == "EUR"]
     return pd.DataFrame(rows), (round(float((er["amount"] - er["fee"]).sum()), 2) if not er.empty else None)
 
@@ -135,24 +138,25 @@ tc, stats = st.sidebar.selectbox("Monedă raportare", ("EUR", "USD", "GBP")), lo
 req = ["Ticker", "Company", "Sector", "Shares", "Buy Price", "Current Price", "Currency", "Dividends EUR"]
 
 with st.container(border=True):
-    st.subheader("📤 Încarcă rapoartele (Actualizează automat tot)")
+    st.subheader("📤 Încarcă rapoartele (Poți selecta mai multe fișiere XTB odată)")
     u1, u2 = st.columns(2)
     with u1:
-        f_xtb = st.file_uploader("Raport XTB (.xlsx sau .csv):", type=["xlsx", "csv"], key="s_xtb")
-        if f_xtb is not None and st.button("Actualizează Tot XTB", type="primary"):
+        f_xtb = st.file_uploader("Rapoarte XTB (.xlsx sau .csv):", type=["xlsx", "csv"], accept_multiple_files=True, key="s_xtb")
+        if f_xtb and st.button("Actualizează Tot XTB", type="primary"):
             old_x = pd.read_csv(XTB_CSV).fillna("") if XTB_CSV.exists() else pd.DataFrame(columns=req)
-            ndf, ff, cpnl, cdiv = parse_xtb_all(f_xtb, old_x)
+            ndf, ff, cpnl, cdiv = parse_xtb_files(f_xtb, old_x)
             if not ndf.empty: save_csv_permanent(ndf.reindex(columns=req), XTB_CSV)
             if ff is not None: stats["xtb_cash"] = ff
             if cpnl != 0: stats["xtb_closed_pnl"] = cpnl
             if cdiv > 0: stats["xtb_closed_divs"] = cdiv
             save_stats(stats); st.cache_data.clear(); st.rerun()
     with u2:
-        f_krk = st.file_uploader("Raport Kraken Libro mayor (.csv):", type="csv", key="s_krk")
-        if f_krk is not None and st.button("Actualizează Tot Kraken", type="primary"):
-            kdf_n, kc = parse_krk_all(f_krk)
-            if not kdf_n.empty: save_csv_permanent(kdf_n.reindex(columns=req), KRK_CSV)
-            if kc is not None: stats["krk_cash"] = kc
+        f_krk = st.file_uploader("Rapoarte Kraken Libro mayor (.csv):", type="csv", accept_multiple_files=True, key="s_krk")
+        if f_krk and st.button("Actualizează Tot Kraken", type="primary"):
+            for fk in f_krk:
+                kdf_n, kc = parse_krk_all(fk)
+                if not kdf_n.empty: save_csv_permanent(kdf_n.reindex(columns=req), KRK_CSV)
+                if kc is not None: stats["krk_cash"] = kc
             save_stats(stats); st.cache_data.clear(); st.rerun()
 
 def read_port(csv_p):
