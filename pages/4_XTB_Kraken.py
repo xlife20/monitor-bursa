@@ -189,7 +189,6 @@ x_dep, x_with = stats["xtb_dep"] * er, stats["xtb_with"] * er
 x_net_dep = x_dep - x_with
 x_reinv = max(x_inv - x_net_dep, 0.0)
 x_val_cont = x_mkt + x_cash
-x_net_real = (x_val_cont + x_with) - x_dep
 
 k_cash = stats["krk_cash"] * er
 k_unr = (k_mkt - k_inv) + k_earn
@@ -199,9 +198,9 @@ k_with = stats["krk_with"] * er
 k_net_dep = k_dep - k_with
 
 def render_html_tbl(cols_list):
-    ths = "".join([f"<th title='{tip}' style='border:1px solid #333;padding:6px 3px;text-align:center;font-weight:bold;background:#1e222d;color:#fff;font-size:12px;line-height:1.25;cursor:help;'>{lbl}</th>" for lbl, _, tip in cols_list])
-    tds = "".join([f"<td title='{tip}' style='border:1px solid #333;padding:8px 3px;text-align:center;font-weight:bold;font-size:13px;color:{('#00e676' if str(val).startswith('+') else ('#ff5252' if str(val).startswith('-') else '#e0e0e0'))};'>{val}</td>" for _, val, tip in cols_list])
-    st.markdown(f"<table style='width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:10px;'><thead><tr>{ths}</tr></thead><tbody><tr>{tds}</tr></tbody></table>", unsafe_allow_html=True)
+    ths = "".join([f"<th title='{tip}' style='border:1px solid #333;padding:8px 3px;text-align:center;font-weight:bold;background:#1e222d;color:#fff;font-size:14px;line-height:1.25;cursor:help;'>{lbl}</th>" for lbl, _, tip in cols_list])
+    tds = "".join([f"<td title='{tip}' style='border:1px solid #333;padding:10px 3px;text-align:center;font-weight:bold;font-size:16px;color:{('#00e676' if str(val).startswith('+') else ('#ff5252' if str(val).startswith('-') else '#e0e0e0'))};'>{val}</td>" for _, val, tip in cols_list])
+    st.markdown(f"<table style='width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:12px;'><thead><tr>{ths}</tr></thead><tbody><tr>{tds}</tr></tbody></table>", unsafe_allow_html=True)
 
 hx1, hx2 = st.columns((6.8, 1.2))
 hx1.subheader("📈 Portofoliu XTB")
@@ -265,10 +264,3 @@ render_html_tbl([
     ("8. Profit", f"{k_unr:+,.2f}", "Profitul sau pierderea actualizată (Valoare Piață minus Total Investit + Earn)"),
     ("9. Valoare<br>Piață", f"{k_mkt:,.2f}", "Valoarea actuală live a criptomonedelor din portofoliu")
 ])
-
-st.divider(); st.subheader("🌐 Total General (XTB + Kraken)")
-g1, g2, g3, g4 = st.columns(4)
-g1.metric("Total Investit", f"{(x_inv + k_inv):,.2f} {tc}")
-g2.metric("Total Cash Nealocat", f"{(x_cash + k_cash):,.2f} {tc}")
-g3.metric("Valoare Totală Conturi", f"{(x_val_cont + k_val_cont):,.2f} {tc}")
-g4.metric("Profit Net Cumulat", f"{(x_net_real + k_unr):+,.2f} {tc}")
