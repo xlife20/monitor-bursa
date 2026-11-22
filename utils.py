@@ -99,7 +99,7 @@ def fetch_data(tickers, currencies):
     return prices, changes, rsim, smam, fx
 @st.cache_data(ttl=86400, show_spinner=False)
 def fetch_fundamentals(tickers):
-    pe_map, rng_map = {}, {}
+    pe_map, lo_map, hi_map = {}, {}, {}
     uk_p = {"DGE.L", "BATS.L", "ABF.L"}
     for t in tickers:
         try:
@@ -109,12 +109,13 @@ def fetch_fundamentals(tickers):
             if isinstance(pe, (int, float)) and pe > 0:
                 pe_map[t] = f"{float(pe):.2f}"
             lo, hi = info.get("fiftyTwoWeekLow"), info.get("fiftyTwoWeekHigh")
-            if isinstance(lo, (int, float)) and isinstance(hi, (int, float)) and lo > 0 and hi > 0:
-                lo_s, hi_s = lo * sc, hi * sc
-                rng_map[t] = f"{lo_s:.2f} - {hi_s:.2f}"
+            if isinstance(lo, (int, float)) and lo > 0:
+                lo_map[t] = float(lo) * sc
+            if isinstance(hi, (int, float)) and hi > 0:
+                hi_map[t] = float(hi) * sc
         except Exception:
             pass
-    return pe_map, rng_map
+    return pe_map, lo_map, hi_map
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def fetch_annual_dividends(tickers):
