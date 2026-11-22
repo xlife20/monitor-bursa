@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import csv, io, json
+import csv, io
 from pathlib import Path
 from utils import save_csv_permanent, fetch_data
 
@@ -26,35 +26,52 @@ def save_stats(d):
     sdf = pd.DataFrame([{"key": k, "val": round(float(v), 4)} for k, v in d.items()])
     return save_csv_permanent(sdf, STATS_CSV)
 
-def parse_xtb_extra(up_f):
-    raw = up_f.getvalue().decode("utf-8", errors="ignore")
+def parse_xtb_any(up_f):
     closed_pnl, closed_divs, free_funds = 0.0, 0.0, None
-    mode = ""
     open_tks = set()
-    for r in csv.reader(io.StringIO(raw)):
-        if not r: continue
-        c0 = str(list(r)[0]).strip()
-        c2 = str(list(r)[2]).strip() if len(r) > 2 else ""
-        c5 = str(list(r)[5]).strip() if len(r) > 5 else ""
-        if c0 == "Free funds" and len(r) > 1:
-            try: free_funds = float(str(list(r)[1]).strip())
+    rows_all = []
+
+    if up_f.name.lower().endswith(".xlsx"):
+        xl = pd.ExcelFile(up_f)
+        for sh in xl.sheet_names:
+            df_sh = xl.parse(sh, header=None).fillna("")
+            for _, r in df_sh.iterrows():
+                rows_all.append([str(x).strip() for x in r.tolist()])
+    else:
+        raw = up_f.getvalue().decode("utf-8", errors="ignore")
+        for r in csv.reader(io.StringIO(raw)):
+            rows_all.append([str(x).strip() for x in r])
+
+    mode = ""
+    for r in rows_all:
+        if not r or all(x == "" for x in r): continue
+        c0 = r
+        c1 = r if len(r) > 1 else ""
+        c2 = r if len(r) > 2 else ""
+        c5 = r if len(r) > 5 else ""
+        c8 = r if len(r) > 8 else ""
+
+        if "free funds" in c0.lower() and c1:
+            try: free_funds = float(c1.replace(",", ""))
             except ValueError: pass
-        if c0 == "Product" and len(r) >= 9 and str(list(r)[8]).strip() == "Open price":
+        if c0 == "Product" and "Open price" in r:
             mode = "open"; continue
-        if c0 == "Type" and len(r) >= 6 and c5 == "Amount":
+        if c0 == "Type" and "Amount" in r:
             mode = "cash"; continue
         if c0 in ("Total", "Account number", "Note"):
             mode = ""; continue
+
         if mode == "open" and c0 in ("My Trades", "Investment Plan") and c2:
             open_tks.add(c2.replace(".US", "").replace(".UK", ".L").replace(".ES", ".MC").replace(".IT", ".MI"))
         elif mode == "cash" and c2:
             tk = c2.replace(".US", "").replace(".UK", ".L").replace(".ES", ".MC").replace(".IT", ".MI")
-            try: amt = float(c5)
+            try: amt = float(c5.replace(",", ""))
             except ValueError: continue
-            if c0 == "close trade":
+            if c0.lower() in ("close trade", "profit/loss", "closed trade"):
                 closed_pnl += amt
             elif c0 in ("Dividend", "Withholding tax") and tk not in open_tks:
                 closed_divs += amt
+
     return free_funds, round(closed_pnl, 2), round(max(closed_divs, 0.0), 2)
 
 def parse_krk_cash(up_f):
@@ -78,12 +95,12 @@ st.title("📊 Sinteză Completă: XTB + Kraken")
 tc = st.sidebar.selectbox("Monedă raportare", ("EUR", "USD", "GBP"))
 stats = load_stats()
 
-with st.expander("📥 Actualizează automat sumele nealocate și pozițiile închise din CSV", expanded=False):
+with st.expander("📥 Actualizează automat sumele nealocate și pozițiile închise din raport", expanded=False):
     col_u1, col_u2 = st.columns(2)
     with col_u1:
-        f_xtb = st.file_uploader("Raport CSV XTB (pentru Cash + Profit vânzări):", type="csv", key="s_xtb")
+        f_xtb = st.file_uploader("Raport XTB (.xlsx sau .csv):", type=["xlsx", "csv"], key="s_xtb")
         if f_xtb is not None and st.button("Extrage date XTB", type="primary"):
-            ff, cpnl, cdiv = parse_xtb_extra(f_xtb)
+            ff, cpnl, cdiv = parse_xtb_any(f_xtb)
             if ff is not None: stats["xtb_cash"] = ff
             stats["xtb_closed_pnl"] = cpnl
             stats["xtb_closed_divs"] = cdiv
