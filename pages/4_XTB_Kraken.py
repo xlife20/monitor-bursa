@@ -96,7 +96,6 @@ def parse_xtb_all(up_f, old_df):
             oset.add(tk); sh = g["Shares"].sum(); ab = (g["Shares"] * g["Buy"]).sum() / sh if sh > 0 else 0.0
             out.append({"Ticker": str(tk), "Company": str(next(iter(g["Company"]))), "Sector": str(next(iter(g["Sector"]))), "Shares": round(float(sh), 6), "Buy Price": round(float(ab), 4), "Current Price": round(float(ab), 4), "Currency": str(next(iter(g["Currency"]))), "Dividends EUR": round(max(divs.get(tk, 0.0), 0.0), 2)})
     return pd.DataFrame(out), ff, round(cpnl, 2), round(sum(max(v, 0.0) for k, v in divs.items() if k not in oset), 2)
-
 def parse_krk_all(up_f):
     kdf = pd.read_csv(up_f); kdf.columns = kdf.columns.str.lower().str.strip()
     if not {"asset", "amount", "type"}.issubset(set(kdf.columns)): return pd.DataFrame(), None
@@ -146,3 +145,42 @@ with st.container(border=True):
             kdf_n, kc = parse_krk_all(f_krk)
             if not kdf_n.empty: save_csv_permanent(kdf_n.reindex(columns=req), KRK_CSV)
             if kc is not None: stats["krk_cash"] = kc
+            save_stats(stats); st.cache_data.clear(); st.rerun()
+
+def read_port(csv_p):
+    if not csv_p.exists(): return 0.0, 0.0, 0.0, {"EUR": 1.08, "USD": 1.0, "GBP": 1.27}
+    df = pd.read_csv(csv_p).fillna("")
+    df = df[df["Ticker"].astype(str).str.strip() != ""].copy()
+    if df.empty: return 0.0, 0.0, 0.0, {"EUR": 1.08, "USD": 1.0, "GBP": 1.27}
+    prices, _, _, _, fx = fetch_data(df["Ticker"].astype(str).unique().tolist(), list(set(df["Currency"].astype(str).unique().tolist() + ["EUR", "USD", "GBP"])))
+    for c in ("Shares", "Buy Price", "Current Price", "Dividends EUR"): df[c] = pd.to_numeric(df.get(c, 0.0), errors="coerce").fillna(0.0).astype(float)
+    df["Current Price"] = np.where(df["Ticker"].map(prices).notna(), df["Ticker"].map(prices), df["Current Price"]).astype(float)
+    tr = fx.get(tc, 1.0); mult = pd.to_numeric(df["Currency"].map(fx), errors="coerce").fillna(1.0).astype(float) / tr
+    return float((df["Shares"] * df["Buy Price"] * mult).sum()), float((df["Shares"] * df["Current Price"] * mult).sum()), float((df["Dividends EUR"] * (fx.get("EUR", 1.08) / tr)).sum()), fx
+
+x_inv, x_mkt, x_odivs, fx = read_port(XTB_CSV); k_inv, k_mkt, k_earn, _ = read_port(KRK_CSV)
+er = fx.get("EUR", 1.08) / fx.get(tc, 1.0)
+x_cash, x_cpnl, x_tdivs, x_unr = stats["xtb_cash"] * er, stats["xtb_closed_pnl"] * er, x_odivs + stats["xtb_closed_divs"] * er, x_mkt - x_inv
+x_net, k_cash, k_prof = x_unr + x_cpnl + x_tdivs, stats["krk_cash"] * er, (k_mkt - k_inv) + k_earn
+
+st.subheader("📈 Portofoliu XTB")
+x1, x2, x3, x4, x5 = st.columns(5)
+x1.metric("Suma investită (Activă)", f"{x_inv:,.2f} {tc}", f"Piață: {x_mkt:,.2f} {tc}")
+x2.metric("Suma nealocată (Cash)", f"{x_cash:,.2f} {tc}")
+x3.metric("Profit din vânzări acțiuni", f"{x_cpnl:+,.2f} {tc}", "Poziții închise (net)")
+x4.metric("Profit dividende", f"+{x_tdivs:,.2f} {tc}", "Net încasate")
+x5.metric("Profit / Pierdere Total XTB", f"{x_net:+,.2f} {tc}", f"Deschise: {x_unr:+,.2f} {tc}")
+
+st.divider(); st.subheader("🪙 Portofoliu Kraken")
+k1, k2, k3, k4 = st.columns(4)
+k1.metric("Suma investită", f"{k_inv:,.2f} {tc}", f"Piață: {k_mkt:,.2f} {tc}")
+k2.metric("Suma nealocată (Cash)", f"{k_cash:,.2f} {tc}")
+k3.metric("Câștig din Earn", f"+{k_earn:,.4f} {tc}")
+k4.metric("Profit actualizat Kraken", f"{k_prof:+,.2f} {tc}", f"{((k_prof / k_inv * 100) if k_inv > 0 else 0.0):+.2f}%")
+
+st.divider(); st.subheader("🌐 Total General (XTB + Kraken)")
+g1, g2, g3, g4 = st.columns(4)
+g1.metric("Total Investit", f"{(x_inv + k_inv):,.2f} {tc}")
+g2.metric("Total Cash Nealocat", f"{(x_cash + k_cash):,.2f} {tc}")
+g3.metric("Valoare Totală Conturi", f"{(x_mkt + x_cash + k_mkt + k_cash):,.2f} {tc}")
+g4.metric("Profit Net Cumulat", f"{(x_net + k_prof):+,.2f} {tc}")
