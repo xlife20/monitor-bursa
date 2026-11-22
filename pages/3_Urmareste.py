@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 from pathlib import Path
-from utils import save_csv_permanent, get_meta, fetch_data, fetch_annual_dividends, fetch_fundamentals, c_pnl, c_rsi, f_price, f_rsi, f_sma, f_pct, clean_table
+from utils import save_csv_permanent, get_meta, fetch_data, fetch_annual_dividends, fetch_fundamentals, c_pnl, c_rsi, f_price, f_rsi, f_sma, f_pct, clean_table, compact_col_cfg
 
 st.set_page_config(page_title="Watchlist", layout="wide")
 BASE = Path(__file__).resolve().parent.parent
@@ -144,7 +144,7 @@ f_avg = lambda x: "" if (pd.isna(x) or x == "" or float(x) <= 0) else f_price(x)
 if not v.empty:
     cols = ["Ticker", "Company", "Currency", "Sector", "vs_Target", t_col, "Current Price", "Low_52W", "High_52W", "PE_Ratio", "Div_Y", "RSI", "SMA_Pct", "Day_Pct"]
     disp = v.reindex(columns=cols).copy()
-    disp.columns = ["Tiker", "Companie", "Monedă", "Sector", "vs Preț mediu %", "Preț mediu", "Preț curent", "Min 52 săpt.", "Max 52 săpt.", "P/E Ratio", "Dividend AN%", "RSI (14)", "vs SMA 200 %", "Variație azi %"]
-    fmt = {"Preț mediu": f_avg, "Preț curent": f_price, "Min 52 săpt.": f_price, "Max 52 săpt.": f_price, "Dividend AN%": fyoc, "RSI (14)": f_rsi, "vs SMA 200 %": f_sma, "vs Preț mediu %": f_pct, "Variație azi %": f_pct}
-    styler = clean_table(disp, fmt).style.map(c_pnl, subset=["vs Preț mediu %", "vs SMA 200 %", "Variație azi %"]).map(c_rsi, subset=["RSI (14)"])
-    st.dataframe(styler, use_container_width=True, hide_index=True, height=620, column_config={"Tiker": st.column_config.TextColumn("Tiker", pinned=True)})
+    disp.columns = ["Tiker", "Companie", "Mon.", "Sector", "vs Preț\nmediu %", "Preț\nmediu", "Preț\ncurent", "Min 52\nsăpt.", "Max 52\nsăpt.", "P/E\nRatio", "Divid.\nAN %", "RSI\n(14)", "vs SMA\n200 %", "Var.\nazi %"]
+    fmt = {"Preț\nmediu": f_avg, "Preț\ncurent": f_price, "Min 52\nsăpt.": f_price, "Max 52\nsăpt.": f_price, "Divid.\nAN %": fyoc, "RSI\n(14)": f_rsi, "vs SMA\n200 %": f_sma, "vs Preț\nmediu %": f_pct, "Var.\nazi %": f_pct}
+    styler = clean_table(disp, fmt).style.map(c_pnl, subset=["vs Preț\nmediu %", "vs SMA\n200 %", "Var.\nazi %"]).map(c_rsi, subset=["RSI\n(14)"])
+    st.dataframe(styler, use_container_width=True, hide_index=True, height=620, column_config=compact_col_cfg(disp.columns))
