@@ -9,7 +9,7 @@ st.set_page_config(page_title="XTB + Kraken", layout="wide")
 BASE = Path(__file__).resolve().parent.parent
 XTB_CSV, KRK_CSV, STATS_CSV = BASE / "portfolio.csv", BASE / "portfolio_kraken.csv", BASE / "summary_stats.csv"
 
-st.markdown("<style>div[data-testid='stButton'] button p {font-size: 16px !important; font-weight: 700 !important;}</style>", unsafe_allow_html=True)
+st.markdown("<style>div[data-testid='stButton'] button p {font-size: 15px !important; font-weight: 700 !important;}</style>", unsafe_allow_html=True)
 
 def gcol(r, i): return str(list(r)[i]).strip() if len(r) > i else ""
 def clean_tk(t): return str(t).replace(".US", "").replace(".UK", ".L").replace(".ES", ".MC").replace(".IT", ".MI").strip()
@@ -152,11 +152,12 @@ def parse_krk_all(up_f):
 for k_ss in ("imp_x4", "imp_k4"):
     if k_ss not in st.session_state: st.session_state[k_ss] = False
 
-n1, n2, n3, n4 = st.columns(4)
+n1, n2, n3, n4, n5 = st.columns(5)
 if n1.button("⬅️ Meniu Principal", use_container_width=True): st.switch_page("app.py")
 if n2.button("📈 Portofoliu XTB", use_container_width=True): st.switch_page("pages/1_Portofoliu_XTB.py")
 if n3.button("🪙 Portofoliu Kraken", use_container_width=True): st.switch_page("pages/2_Portofoliu_Kraken.py")
-if n4.button("👁️ Urmărește", use_container_width=True): st.switch_page("pages/3_Urmareste.py")
+if n4.button("👁️ Watchlist", use_container_width=True): st.switch_page("pages/3_Urmareste.py")
+if n5.button("🔍 Analiză", use_container_width=True): st.switch_page("pages/5_Analiza.py")
 
 if st.sidebar.button("🔄 Actualizează prețurile live"): st.cache_data.clear(); st.rerun()
 st.markdown("<h1 style='text-align:center;margin-top:6px;margin-bottom:14px;'>XTB &nbsp;&nbsp; Kraken</h1>", unsafe_allow_html=True)
