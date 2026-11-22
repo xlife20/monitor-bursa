@@ -9,11 +9,12 @@ CSV_PATH = Path(__file__).resolve().parent.parent / "portfolio_kraken.csv"
 
 st.markdown("<style>div[data-testid='stButton'] button p {font-size: 16px !important; font-weight: 700 !important;}</style>", unsafe_allow_html=True)
 
-n1, n2, n3, n4 = st.columns(4)
+n1, n2, n3, n4, n5 = st.columns(5)
 if n1.button("⬅️ Meniu Principal", use_container_width=True): st.switch_page("app.py")
 if n2.button("📈 Portofoliu XTB", use_container_width=True): st.switch_page("pages/1_Portofoliu_XTB.py")
-if n3.button("👁️ Urmărește", use_container_width=True): st.switch_page("pages/3_Urmareste.py")
+if n3.button("👁️ Watchlist", use_container_width=True): st.switch_page("pages/3_Urmareste.py")
 if n4.button("📊 XTB   Kraken", use_container_width=True): st.switch_page("pages/4_XTB_Kraken.py")
+if n5.button("🔍 Analiză", use_container_width=True): st.switch_page("pages/5_Analiza.py")
 
 if st.sidebar.button("🔄 Actualizează prețurile live"): st.cache_data.clear(); st.rerun()
 
