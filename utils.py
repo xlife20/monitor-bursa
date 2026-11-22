@@ -1,47 +1,3 @@
-import streamlit as st
-import pandas as pd
-import numpy as np
-import yfinance as yf
-import base64, json, urllib.request
-from pathlib import Path
-
-def save_csv_permanent(df, csv_path):
-    csv_path.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(csv_path, index=False)
-    try:
-        tok = st.secrets.get("GITHUB_TOKEN", "")
-        repo = st.secrets.get("GITHUB_REPO", "")
-        if not tok or not repo:
-            return False
-        base_dir = Path(__file__).resolve().parent
-        rel_path = csv_path.resolve().relative_to(base_dir).as_posix()
-        url = f"https://github.com{repo}/contents/{rel_path}"
-        hdrs = {"Authorization": f"Bearer {tok}", "Accept": "application/vnd.github+json", "User-Agent": "StreamlitApp"}
-        sha = ""
-        try:
-            req_get = urllib.request.Request(url, headers=hdrs)
-            with urllib.request.urlopen(req_get, timeout=10) as resp:
-                sha = json.loads(resp.read().decode("utf-8")).get("sha", "")
-        except Exception:
-            pass
-        b64 = base64.b64encode(csv_path.read_bytes()).decode("ascii")
-        body = {"message": f"Update {rel_path}", "content": b64}
-        if sha:
-            body["sha"] = sha
-        req_put = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"), headers=hdrs, method="PUT")
-        with urllib.request.urlopen(req_put, timeout=10):
-            return True
-    except Exception:
-        return False
-
-def load_csv(csv_path, cols):
-    if not csv_path.exists():
-        return pd.DataFrame(columns=cols)
-    df = pd.read_csv(csv_path).fillna("")
-    for c in cols:
-        if c not in df.columns:
-            df[c] = ""
-    return df
 @st.cache_data(ttl=86400, show_spinner=False)
 def get_meta(t):
     try:
@@ -97,6 +53,25 @@ def fetch_data(tickers, currencies):
         except Exception:
             pass
     return prices, changes, rsim, smam, fx
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def fetch_fundamentals(tickers):
+    pe_map, rng_map = {}, {}
+    uk_p = {"DGE.L", "BATS.L", "ABF.L"}
+    for t in tickers:
+        try:
+            info = yf.Ticker(t).info or {}
+            sc = 0.01 if t in uk_p else 1.0
+            pe = info.get("trailingPE")
+            if isinstance(pe, (int, float)) and pe > 0:
+                pe_map[t] = f"{float(pe):.2f}"
+            lo, hi = info.get("fiftyTwoWeekLow"), info.get("fiftyTwoWeekHigh")
+            if isinstance(lo, (int, float)) and isinstance(hi, (int, float)) and lo > 0 and hi > 0:
+                lo_s, hi_s = lo * sc, hi * sc
+                rng_map[t] = f"{lo_s:.2f} - {hi_s:.2f}"
+        except Exception:
+            pass
+    return pe_map, rng_map
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def fetch_annual_dividends(tickers):
