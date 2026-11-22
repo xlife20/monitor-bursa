@@ -21,6 +21,11 @@ if n5.button("🔍 Analiză", use_container_width=True): st.switch_page("pages/5
 
 if st.sidebar.button("🔄 Actualizează prețurile live"): st.cache_data.clear(); st.rerun()
 
+if "w_msg" in st.session_state and st.session_state.w_msg:
+    m_type, m_txt = st.session_state.pop("w_msg")
+    if m_type == "ok": st.success(m_txt)
+    else: st.error(m_txt)
+
 df = pd.read_csv(CSV_PATH).fillna("") if CSV_PATH.exists() else pd.DataFrame(columns=["Ticker", "Company", "Sector", "Avg Price", "Currency"])
 t_col = "Avg Price" if "Avg Price" in df.columns else "Target Price"
 req = ["Ticker", "Company", "Sector", t_col, "Currency"]
@@ -44,20 +49,28 @@ if h3.button("🗑️ Șterge tiker", use_container_width=True): st.session_stat
 if st.session_state.w_add:
     with st.container(border=True):
         raw_tks = st.text_input("Introdu tikere separate prin virgulă (ex: AAPL, MSFT, O, SCHD):", key="w_in_tks")
-        if st.button("Salvează tikerele", type="primary") and raw_tks.strip():
+        if st.button("Salvează tikerele", type="primary"):
             new_list = [x.strip().upper() for x in raw_tks.split(",") if x.strip()]
-            ex_set = set(df["Ticker"].astype(str).str.upper().tolist())
-            added = []
-            for tk in new_list:
-                if tk not in ex_set:
-                    comp, sec, curr = get_meta(tk)
-                    added.append({"Ticker": tk, "Company": comp, "Sector": sec, t_col: xtb_avg.get(tk, 0.0), "Currency": curr})
-                    ex_set.add(tk)
-            if added:
-                ndf = pd.concat([df.reindex(columns=req), pd.DataFrame(added)], ignore_index=True)
-                save_csv_permanent(ndf, CSV_PATH)
-                st.session_state.w_add = False; st.cache_data.clear(); st.rerun()
-
+            if not new_list:
+                st.error("❌ Introdu cel puțin un tiker valid înainte de a salva!")
+            else:
+                ex_set = set(df["Ticker"].astype(str).str.upper().tolist())
+                added, dup = [], []
+                for tk in new_list:
+                    if tk in ex_set:
+                        dup.append(tk)
+                    else:
+                        comp, sec, curr = get_meta(tk)
+                        added.append({"Ticker": tk, "Company": comp, "Sector": sec, t_col: xtb_avg.get(tk, 0.0), "Currency": curr})
+                        ex_set.add(tk)
+                if added:
+                    ndf = pd.concat([df.reindex(columns=req), pd.DataFrame(added)], ignore_index=True)
+                    ok = save_csv_permanent(ndf, CSV_PATH)
+                    tks_str = ", ".join([x["Ticker"] for x in added])
+                    st.session_state.w_msg = ("ok" if ok else "err", f"✅ Adăugat în Watchlist (GitHub): {tks_str}" if ok else f"❌ Eroare la salvarea pe GitHub pentru: {tks_str}")
+                    st.session_state.w_add = False; st.cache_data.clear(); st.rerun()
+                else:
+                    st.error(f"❌ Tikerul/tikerele există deja în Watchlist: {', '.join(dup)}")
 if st.session_state.w_del:
     with st.container(border=True):
         tks_del = df["Ticker"].astype(str).tolist() if not df.empty else []
@@ -66,8 +79,11 @@ if st.session_state.w_del:
             sel_d = c_d1.selectbox("Alege tikerul de șters:", tks_del, key="w_sel_del")
             if c_d2.button("Confirmă ștergerea", type="primary"):
                 ndf = df[df["Ticker"].astype(str) != sel_d].reindex(columns=req)
-                save_csv_permanent(ndf, CSV_PATH)
+                ok = save_csv_permanent(ndf, CSV_PATH)
+                st.session_state.w_msg = ("ok" if ok else "err", f"✅ Tikerul {sel_d} a fost șters din Watchlist!" if ok else f"❌ Eroare la ștergerea tikerului {sel_d} pe GitHub!")
                 st.session_state.w_del = False; st.cache_data.clear(); st.rerun()
+        else:
+            st.error("❌ Lista Watchlist este deja goală.")
 
 df = df[df["Ticker"].astype(str).str.strip() != ""].copy()
 tks = df["Ticker"].astype(str).unique().tolist()
