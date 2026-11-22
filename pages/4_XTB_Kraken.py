@@ -44,29 +44,45 @@ def parse_xtb_any(up_f):
     closed_pnl, closed_divs, free_funds = 0.0, 0.0, None
     open_tks = set()
     rows_all = []
+    sheets_found = []
 
     if up_f.name.lower().endswith(".xlsx"):
         xl = pd.ExcelFile(up_f)
-        for sh in xl.sheet_names:
+        sheets_found = xl.sheet_names
+        # Daca este fisierul Google Sheets cu Tranzactii_XTB (BUY / SELL)
+        if "Tranzactii_XTB" in sheets_found:
+            tdf = xl.parse("Tranzactii_XTB").fillna("")
+            inv_qty, inv_cost = {}, {}
+            for _, r in tdf.iterrows():
+                tk = str(r.get("Simbol XTB", "")).strip()
+                tip = str(r.get("Tip (BUY / SELL)", "")).strip().upper()
+                q = to_num(r.get("Cantitate", ""))
+                p = to_num(r.get("Preț Achiziție / Vânzare", ""))
+                if not tk or q is None or p is None: continue
+                if tip == "BUY":
+                    inv_qty[tk] = inv_qty.get(tk, 0.0) + q
+                    inv_cost[tk] = inv_cost.get(tk, 0.0) + (q * p)
+                elif tip == "SELL" and inv_qty.get(tk, 0.0) > 0:
+                    avg_c = inv_cost[tk] / inv_qty[tk]
+                    closed_pnl += (p - avg_c) * q
+                    inv_qty[tk] = max(inv_qty[tk] - q, 0.0)
+                    inv_cost[tk] = inv_qty[tk] * avg_c
+            return free_funds, round(closed_pnl, 2), round(closed_divs, 2), f"Tranzactii_XTB ({len(tdf)} rânduri)"
+
+        for sh in sheets_found:
             df_sh = xl.parse(sh, header=None).fillna("")
             for _, r in df_sh.iterrows():
                 rows_all.append([str(x).strip() for x in r.tolist()])
     else:
+        sheets_found = ["CSV"]
         raw = up_f.getvalue().decode("utf-8", errors="ignore")
         for r in csv.reader(io.StringIO(raw)):
             rows_all.append([str(x).strip() for x in r])
 
-    mode = ""
-    pnl_idx = -1
-    tk_idx = 2
-    amt_idx = 5
-    type_idx = 0
-
+    mode, pnl_idx, tk_idx, amt_idx, type_idx = "", -1, 2, 5, 0
     for r in rows_all:
         if not r or all(x == "" for x in r): continue
         low = [x.lower() for x in r]
-
-        # 1. Cautam Free funds / Fondos libres oriunde pe rand
         for idx, cell in enumerate(low):
             if any(k in cell for k in ("free funds", "fondos libres", "saldo libre", "margen libre")):
                 for nxt in r[idx + 1:]:
@@ -74,46 +90,36 @@ def parse_xtb_any(up_f):
                     if v is not None:
                         free_funds = v
                         break
-
-        # 2. Detectam antete de tabele (Spaniola + Engleza)
         if any(k in low for k in ("hora de cierre", "close time")) and any(k in low for k in ("beneficio bruto", "beneficio neto", "beneficio/pérdida", "gross p/l", "net p/l", "profit/loss")):
-            mode = "closed"
-            pnl_idx = -1
+            mode, pnl_idx = "closed", -1
             for idx, col_n in enumerate(low):
                 if col_n in ("beneficio neto", "net p/l", "beneficio bruto", "gross p/l", "beneficio/pérdida", "profit/loss"):
-                    pnl_idx = idx
-                    break
+                    pnl_idx = idx; break
             continue
-
         if any(k in low for k in ("precio de apertura", "open price")) and any(k in low for k in ("producto", "product")):
             mode = "open"
             for idx, col_n in enumerate(low):
                 if col_n in ("símbolo", "simbolo", "ticker"): tk_idx = idx
             continue
-
-        if any(k in low for k in ("tipo", "type")) and any(k in low for k in ("importe", "cantidad", "amount")) and any(k in low for k in ("comentario", "comment", "hora", "time")):
+        if any(k in low for k in ("tipo", "type")) and any(k in low for k in ("importe", "cantidad", "amount")):
             mode = "cash"
             for idx, col_n in enumerate(low):
                 if col_n in ("tipo", "type"): type_idx = idx
                 elif col_n in ("símbolo", "simbolo", "ticker", "instrumento", "instrument"): tk_idx = idx
                 elif col_n in ("importe", "amount"): amt_idx = idx
             continue
-
         if gcol(r, 0).lower() in ("total", "número de cuenta", "account number", "nota", "note"):
             mode = ""; continue
 
-        # 3. Procesam randurile in functie de sectiune
         if mode == "closed" and pnl_idx >= 0:
             first_c = gcol(r, 0).lower()
             if first_c not in ("", "total", "producto", "product") and not first_c.startswith("total"):
                 v = to_num(gcol(r, pnl_idx))
                 if v is not None: closed_pnl += v
-
         elif mode == "open":
             tk_raw = gcol(r, tk_idx)
             if tk_raw and "." in tk_raw:
                 open_tks.add(tk_raw.replace(".US", "").replace(".UK", ".L").replace(".ES", ".MC").replace(".IT", ".MI"))
-
         elif mode == "cash":
             op_t = gcol(r, type_idx).lower()
             tk_raw = gcol(r, tk_idx)
@@ -125,7 +131,7 @@ def parse_xtb_any(up_f):
             elif any(k in op_t for k in ("dividend", "dividendo", "withholding", "retención", "retencion")) and tk and tk not in open_tks:
                 closed_divs += amt
 
-    return free_funds, round(closed_pnl, 2), round(max(closed_divs, 0.0), 2)
+    return free_funds, round(closed_pnl, 2), round(max(closed_divs, 0.0), 2), ", ".join(sheets_found)
 
 def parse_krk_cash(up_f):
     kdf = pd.read_csv(up_f)
@@ -153,12 +159,12 @@ with st.expander("📥 Actualizează automat sumele nealocate și pozițiile în
     with col_u1:
         f_xtb = st.file_uploader("Raport XTB (.xlsx sau .csv):", type=["xlsx", "csv"], key="s_xtb")
         if f_xtb is not None and st.button("Extrage date XTB", type="primary"):
-            ff, cpnl, cdiv = parse_xtb_any(f_xtb)
+            ff, cpnl, cdiv, info_sh = parse_xtb_any(f_xtb)
             if ff is not None: stats["xtb_cash"] = ff
             stats["xtb_closed_pnl"] = cpnl
-            stats["xtb_closed_divs"] = cdiv
+            if cdiv > 0: stats["xtb_closed_divs"] = cdiv
             ok = save_stats(stats)
-            st.success(f"Extrase: Vânzări {cpnl:+.2f} EUR, Dividende închise {cdiv:.2f} EUR!" + (" (Salvat permanent)" if ok else ""))
+            st.info(f"Citit din: {info_sh} | Cash: {ff} | Profit vânzări: {cpnl:+.2f} EUR" + (" (Salvat permanent)" if ok else ""))
             st.rerun()
     with col_u2:
         f_krk = st.file_uploader("Raport CSV Kraken Libro mayor (pentru Cash EUR):", type="csv", key="s_krk")
@@ -201,20 +207,3 @@ x_tot_divs = x_open_divs + (stats["xtb_closed_divs"] * er)
 x_unrealized = x_mkt - x_inv
 x_net_total = x_unrealized + x_closed_pnl + x_tot_divs
 
-k_cash = stats["krk_cash"] * er
-k_profit_live = (k_mkt - k_inv) + k_earn
-
-st.subheader("📈 Portofoliu XTB")
-x1, x2, x3, x4, x5 = st.columns(5)
-x1.metric("Suma investită (Activă)", f"{x_inv:,.2f} {tc}", f"Piață: {x_mkt:,.2f} {tc}")
-x2.metric("Suma nealocată (Cash)", f"{x_cash:,.2f} {tc}")
-x3.metric("Profit din vânzări acțiuni", f"{x_closed_pnl:+,.2f} {tc}", "Poziții închise (net)")
-x4.metric("Profit dividende", f"+{x_tot_divs:,.2f} {tc}", "Net încasate")
-x5.metric("Profit / Pierdere Total XTB", f"{x_net_total:+,.2f} {tc}", f"Deschise: {x_unrealized:+,.2f} {tc}")
-
-st.divider()
-st.subheader("🪙 Portofoliu Kraken")
-k1, k2, k3, k4 = st.columns(4)
-k1.metric("Suma investită", f"{k_inv:,.2f} {tc}", f"Piață: {k_mkt:,.2f} {tc}")
-k2.metric("Suma nealocată (Cash)", f"{k_cash:,.2f} {tc}")
-k3.metric("Câștig din Earn", f"+{k_earn:,.4f} {tc}")
