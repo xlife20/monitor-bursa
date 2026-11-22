@@ -13,7 +13,7 @@ def gcol(r, i): return str(list(r)[i]).strip() if len(r) > i else ""
 def clean_tk(t): return str(t).replace(".US", "").replace(".UK", ".L").replace(".ES", ".MC").replace(".IT", ".MI").strip()
 
 def to_num(val):
-    s = str(val).strip().replace(" ", "").replace("€", "").replace("$", "")
+    s = str(val).strip().replace(" ", "").replace("€", "").replace("$", "").replace("+", "")
     if "," in s and "." in s: s = s.replace(",", "") if s.rfind(".") > s.rfind(",") else s.replace(".", "").replace(",", ".")
     elif "," in s: s = s.replace(",", ".")
     try: return float(s)
@@ -130,7 +130,7 @@ def parse_krk_all(up_f):
             cr, fr = g[~g["norm"].isin({"EUR", "USD", "GBP"}) & g["type"].isin(("trade", "spend", "receive"))], g[g["norm"].isin({"EUR", "USD", "GBP"}) & g["type"].isin(("trade", "spend", "receive"))]
             if not cr.empty and not fr.empty and float(cr["amount"].sum()) > 0:
                 ca = str(next(iter(cr["norm"]))); cost[ca] = cost.get(ca, 0.0) + abs(float(fr["amount"].sum())) + float(fr["fee"].sum())
-    rows = [{"Ticker": f"{a}-EUR", "Company": get_meta(f"{a}-EUR")[0], "Sector": "Crypto", "Shares": round(sh, 8), "Buy Price": round((cost.get(a, 0.0) / sh) if cost.get(a, 0.0) > 0 else 0.0, 4), "Current Price": round((cost.get(a, 0.0) / sh) if cost.get(a, 0.0) > 0 else 0.0, 4), "Currency": "EUR", "Dividends EUR": round(rew.get(a, 0.0), 4)} for a, sh in hold.items() if sh > 1e-7]
+    rows = [{"Ticker": f"{a}-EUR", "Company": get_meta(f"{a}-EUR"), "Sector": "Crypto", "Shares": round(sh, 8), "Buy Price": round((cost.get(a, 0.0) / sh) if cost.get(a, 0.0) > 0 else 0.0, 4), "Current Price": round((cost.get(a, 0.0) / sh) if cost.get(a, 0.0) > 0 else 0.0, 4), "Currency": "EUR", "Dividends EUR": round(rew.get(a, 0.0), 4)} for a, sh in hold.items() if sh > 1e-7]
     er = kdf[kdf["norm"] == "EUR"]
     return pd.DataFrame(rows), (round(float((er["amount"] - er["fee"]).sum()), 2) if not er.empty else None)
 
@@ -186,22 +186,44 @@ x_val_tot_cu_retr = x_val_cont + x_with
 x_net_real = x_val_tot_cu_retr - x_dep
 k_cash, k_prof = stats["krk_cash"] * er, (k_mkt - k_inv) + k_earn
 
-st.subheader("📈 Portofoliu XTB — Reconciliere Completă")
+st.subheader("📈 Portofoliu XTB — Reconciliere Completă (Editabil)")
+col_sum = f"Sumă ({tc})"
 xtb_rows = [
-    {"Pas": "1. Banii tăi", "Element": "Total Depus în XTB", f"Sumă ({tc})": f"{x_dep:,.2f}", "Explicație": "Toate depunerile efectuate în cont"},
-    {"Pas": "2. Banii tăi", "Element": "Total Retras în bancă", f"Sumă ({tc})": f"-{x_with:,.2f}", "Explicație": "Bani scoși deja din contul XTB"},
-    {"Pas": "3. Capital rămas", "Element": "Capital Net Rămas în Cont", f"Sumă ({tc})": f"{x_net_dep:,.2f}", "Explicație": "Depuneri minus retrageri (banii tăi activi)"},
-    {"Pas": "4. Câștig încasat", "Element": "Profit din vânzarea acțiunilor", f"Sumă ({tc})": f"{x_cpnl:+,.2f}", "Explicație": "Diferența netă dintre prețul de vânzare și cost (poziții închise)"},
-    {"Pas": "5. Câștig încasat", "Element": "Profit dividende nete", f"Sumă ({tc})": f"+{x_tdivs:,.2f}", "Explicație": "Dividende încasate după impozite"},
-    {"Pas": "6. Alocare", "Element": "Profit Reinvestit în acțiuni", f"Sumă ({tc})": f"+{x_reinv:,.2f}", "Explicație": "Câștig din vânzări/dividende folosit pentru a cumpăra acțiuni noi"},
-    {"Pas": "7. Alocare", "Element": "Suma nealocată (Cash / Fonduri libere)", f"Sumă ({tc})": f"{x_cash:,.2f}", "Explicație": "Bani lichizi disponibili în cont"},
-    {"Pas": "8. Portofoliu activ", "Element": "Valoare Investită (Cost achiziție)", f"Sumă ({tc})": f"{x_inv:,.2f}", "Explicație": "Capital Net Rămas + Profit Reinvestit"},
-    {"Pas": "9. Portofoliu activ", "Element": "Valoare Actuală Piață (Acțiuni/ETF)", f"Sumă ({tc})": f"{x_mkt:,.2f}", "Explicație": f"Evoluție poziții deschise: {x_unr:+,.2f} {tc}"},
-    {"Pas": "10. Sold XTB", "Element": "Valoare Rămasă în Contul XTB", f"Sumă ({tc})": f"{x_val_cont:,.2f}", "Explicație": "Valoare Actuală Piață + Suma nealocată (Cash)"},
-    {"Pas": "11. Total Generat", "Element": "Valoare Totală (Cont XTB + Retrageri)", f"Sumă ({tc})": f"{x_val_tot_cu_retr:,.2f}", "Explicație": "Valoare Rămasă în Cont + Total Retras în bancă"},
-    {"Pas": "12. Rezultat Final", "Element": "PROFIT NET REAL XTB", f"Sumă ({tc})": f"{x_net_real:+,.2f}", "Explicație": f"Valoare Totală ({x_val_tot_cu_retr:,.2f}) minus Total Depus ({x_dep:,.2f})"}
+    {"Pas": "1. Banii tăi", "Element": "Total Depus în XTB", col_sum: round(x_dep, 2), "Explicație": "Editabil: Toate depunerile efectuate în cont"},
+    {"Pas": "2. Banii tăi", "Element": "Total Retras în bancă", col_sum: round(-x_with, 2), "Explicație": "Editabil: Bani scoși deja din contul XTB"},
+    {"Pas": "3. Capital rămas", "Element": "Capital Net Rămas în Cont", col_sum: round(x_net_dep, 2), "Explicație": "Calculat automat: Depuneri minus retrageri"},
+    {"Pas": "4. Câștig încasat", "Element": "Profit din vânzarea acțiunilor", col_sum: round(x_cpnl, 2), "Explicație": "Editabil: Profit/pierdere netă poziții închise"},
+    {"Pas": "5. Câștig încasat", "Element": "Profit dividende nete", col_sum: round(x_tdivs, 2), "Explicație": "Editabil: Dividende încasate după impozite"},
+    {"Pas": "6. Alocare", "Element": "Profit Reinvestit în acțiuni", col_sum: round(x_reinv, 2), "Explicație": "Calculat automat: Câștig folosit pentru acțiuni noi"},
+    {"Pas": "7. Alocare", "Element": "Suma nealocată (Cash / Fonduri libere)", col_sum: round(x_cash, 2), "Explicație": "Editabil: Bani lichizi disponibili în cont"},
+    {"Pas": "8. Portofoliu activ", "Element": "Valoare Investită (Cost achiziție)", col_sum: round(x_inv, 2), "Explicație": "Din portofoliul activ XTB"},
+    {"Pas": "9. Portofoliu activ", "Element": "Valoare Actuală Piață (Acțiuni/ETF)", col_sum: round(x_mkt, 2), "Explicație": f"Evoluție poziții deschise: {x_unr:+,.2f} {tc}"},
+    {"Pas": "10. Sold XTB", "Element": "Valoare Rămasă în Contul XTB", col_sum: round(x_val_cont, 2), "Explicație": "Calculat automat: Piață + Cash"},
+    {"Pas": "11. Total Generat", "Element": "Valoare Totală (Cont XTB + Retrageri)", col_sum: round(x_val_tot_cu_retr, 2), "Explicație": "Calculat automat: Sold Cont + Retrageri"},
+    {"Pas": "12. Rezultat Final", "Element": "PROFIT NET REAL XTB", col_sum: round(x_net_real, 2), "Explicație": "Calculat automat: Valoare Totală minus Total Depus"}
 ]
-st.dataframe(pd.DataFrame(xtb_rows), use_container_width=True, hide_index=True, height=460)
+ed_xtb_tbl = st.data_editor(
+    pd.DataFrame(xtb_rows),
+    use_container_width=True,
+    hide_index=True,
+    height=465,
+    disabled=["Pas", "Element", "Explicație"],
+    column_config={col_sum: st.column_config.NumberColumn(col_sum, format="%.2f")},
+    key="ed_xtb_reconcil"
+)
+if st.button("💾 Salvează modificările manuale XTB", type="primary"):
+    vals_map = dict(zip(ed_xtb_tbl["Element"], ed_xtb_tbl[col_sum]))
+    if "Total Depus în XTB" in vals_map: stats["xtb_dep"] = abs(float(vals_map["Total Depus în XTB"])) / er
+    if "Total Retras în bancă" in vals_map: stats["xtb_with"] = abs(float(vals_map["Total Retras în bancă"])) / er
+    if "Profit din vânzarea acțiunilor" in vals_map: stats["xtb_closed_pnl"] = float(vals_map["Profit din vânzarea acțiunilor"]) / er
+    if "Profit dividende nete" in vals_map:
+        new_tot_div_eur = float(vals_map["Profit dividende nete"]) / er
+        open_div_eur = x_odivs / er
+        stats["xtb_closed_divs"] = max(new_tot_div_eur - open_div_eur, 0.0)
+    if "Suma nealocată (Cash / Fonduri libere)" in vals_map: stats["xtb_cash"] = float(vals_map["Suma nealocată (Cash / Fonduri libere)"]) / er
+    ok = save_stats(stats)
+    st.success("Salvat permanent pe GitHub!" if ok else "Salvat local!")
+    st.rerun()
 
 st.divider(); st.subheader("🪙 Portofoliu Kraken")
 k1, k2, k3, k4 = st.columns(4)
@@ -213,6 +235,3 @@ k4.metric("Profit actualizat Kraken", f"{k_prof:+,.2f} {tc}", f"{((k_prof / k_in
 st.divider(); st.subheader("🌐 Total General (XTB + Kraken)")
 g1, g2, g3, g4 = st.columns(4)
 g1.metric("Total Investit", f"{(x_inv + k_inv):,.2f} {tc}")
-g2.metric("Total Cash Nealocat", f"{(x_cash + k_cash):,.2f} {tc}")
-g3.metric("Valoare Totală Conturi", f"{(x_val_cont + k_mkt + k_cash):,.2f} {tc}")
-g4.metric("Profit Net Cumulat", f"{(x_net_real + k_prof):+,.2f} {tc}")
