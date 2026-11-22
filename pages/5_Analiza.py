@@ -23,7 +23,12 @@ def tr_ro(txt):
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=8) as r:
             res = json.loads(r.read().decode("utf-8"))
-            return "".join([x[0] for x in res[0] if x and x[0]])
+            parts = []
+            for item in res[0]:
+                if isinstance(item, list) and len(item) > 0 and isinstance(item[0], str):
+                    parts.append(item[0])
+            out = "".join(parts).strip()
+            return out if out else s
     except Exception:
         return s
 
@@ -42,7 +47,11 @@ def get_company_details_ro(tk, fallback_name="", fallback_sec="", fallback_curr=
     mcap = info.get("marketCap")
     mcap_s = f"{mcap/1e9:,.2f} mld. {curr}" if (mcap and mcap >= 1e9) else (f"{mcap/1e6:,.1f} mil. {curr}" if (mcap and mcap >= 1e6) else "-")
     dy = info.get("dividendYield")
-    dy_s = f"{dy*100:.2f}%" if isinstance(dy, (int, float)) and dy > 0 else "-"
+    if isinstance(dy, (int, float)) and dy > 0:
+        dy_val = dy if dy >= 0.1 else dy * 100.0
+        dy_s = f"{dy_val:.2f}%"
+    else:
+        dy_s = "-"
     pe = info.get("trailingPE")
     pe_s = f"{pe:.2f}" if isinstance(pe, (int, float)) and pe > 0 else (pe_val or "-")
 
