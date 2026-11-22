@@ -9,18 +9,13 @@ st.set_page_config(page_title="XTB + Kraken", layout="wide")
 BASE = Path(__file__).resolve().parent.parent
 XTB_CSV, KRK_CSV, STATS_CSV = BASE / "portfolio.csv", BASE / "portfolio_kraken.csv", BASE / "summary_stats.csv"
 
-def gcol(r, i):
-    return str(list(r)[i]).strip() if len(r) > i else ""
-
-def clean_tk(t):
-    return str(t).replace(".US", "").replace(".UK", ".L").replace(".ES", ".MC").replace(".IT", ".MI").strip()
+def gcol(r, i): return str(list(r)[i]).strip() if len(r) > i else ""
+def clean_tk(t): return str(t).replace(".US", "").replace(".UK", ".L").replace(".ES", ".MC").replace(".IT", ".MI").strip()
 
 def to_num(val):
     s = str(val).strip().replace(" ", "").replace("€", "").replace("$", "")
-    if "," in s and "." in s:
-        s = s.replace(",", "") if s.rfind(".") > s.rfind(",") else s.replace(".", "").replace(",", ".")
-    elif "," in s:
-        s = s.replace(",", ".")
+    if "," in s and "." in s: s = s.replace(",", "") if s.rfind(".") > s.rfind(",") else s.replace(".", "").replace(",", ".")
+    elif "," in s: s = s.replace(",", ".")
     try: return float(s)
     except ValueError: return None
 
@@ -29,29 +24,23 @@ def load_stats():
     if STATS_CSV.exists():
         try:
             for _, r in pd.read_csv(STATS_CSV).iterrows():
-                k = str(r.get("key", ""))
-                if k in d: d[k] = float(r.get("val", d[k]))
+                if str(r.get("key", "")) in d: d[str(r.get("key"))] = float(r.get("val", 0.0))
         except Exception: pass
     return d
 
-def save_stats(d):
-    return save_csv_permanent(pd.DataFrame([{"key": k, "val": round(float(v), 4)} for k, v in d.items()]), STATS_CSV)
+def save_stats(d): return save_csv_permanent(pd.DataFrame([{"key": k, "val": round(float(v), 4)} for k, v in d.items()]), STATS_CSV)
 
-def parse_xtb_complete(up_f, old_df):
+def parse_xtb_all(up_f, old_df):
     rows = []
     if up_f.name.lower().endswith(".xlsx"):
         xl = pd.ExcelFile(up_f)
         for sh in xl.sheet_names:
-            for _, r in xl.parse(sh, header=None).fillna("").iterrows():
-                rows.append([str(x).strip() for x in r.tolist()])
+            for _, r in xl.parse(sh, header=None).fillna("").iterrows(): rows.append([str(x).strip() for x in r.tolist()])
     else:
-        for r in csv.reader(io.StringIO(up_f.getvalue().decode("utf-8", errors="ignore"))):
-            rows.append([str(x).strip() for x in r])
+        for r in csv.reader(io.StringIO(up_f.getvalue().decode("utf-8", errors="ignore"))): rows.append([str(x).strip() for x in r])
 
-    divs, open_rows, mode = {}, [], ""
-    cpnl, ff = 0.0, None
+    divs, open_rows, mode, cpnl, ff = {}, [], "", 0.0, None
     pidx, tidx, vidx, oidx, aidx, yidx = -1, 2, 5, 8, 5, 0
-
     for r in rows:
         if not r or all(x == "" for x in r): continue
         low = [x.lower() for x in r]
@@ -81,20 +70,16 @@ def parse_xtb_complete(up_f, old_df):
             continue
         if gcol(r, 0).lower() in ("total", "número de cuenta", "account number", "nota", "note"): mode = ""; continue
 
-        if mode == "closed" and pidx >= 0:
-            if not gcol(r, 0).lower().startswith(("total", "producto", "product", "")):
-                v = to_num(gcol(r, pidx))
-                if v is not None: cpnl += v
+        if mode == "closed" and pidx >= 0 and not gcol(r, 0).lower().startswith(("total", "producto", "product", "")):
+            v = to_num(gcol(r, pidx))
+            if v is not None: cpnl += v
         elif mode == "cash":
-            ot, amt = gcol(r, yidx).lower(), to_num(gcol(r, aidx))
-            tk = clean_tk(gcol(r, tidx))
+            ot, amt, tk = gcol(r, yidx).lower(), to_num(gcol(r, aidx)), clean_tk(gcol(r, tidx))
             if amt is None: continue
             if ot in ("close trade", "cierre de operación", "cierre de operacion") and pidx < 0: cpnl += amt
-            elif any(k in ot for k in ("dividend", "dividendo", "withholding", "retención", "retencion")) and tk:
-                divs[tk] = divs.get(tk, 0.0) + amt
+            elif any(k in ot for k in ("dividend", "dividendo", "withholding", "retención", "retencion")) and tk: divs[tk] = divs.get(tk, 0.0) + amt
         elif mode == "open" and gcol(r, 0) in ("My Trades", "Investment Plan", "Mis operaciones", "Planes de inversión"):
-            rtk = gcol(r, tidx)
-            tk = clean_tk(rtk)
+            rtk = gcol(r, tidx); tk = clean_tk(rtk)
             if not tk or "CVR" in tk or "US931" in tk: continue
             vol, bp = to_num(gcol(r, vidx)), to_num(gcol(r, oidx))
             if vol is None or bp is None or vol <= 0: continue
@@ -108,63 +93,38 @@ def parse_xtb_complete(up_f, old_df):
     out, oset = [], set()
     if open_rows:
         for tk, g in pd.DataFrame(open_rows).groupby("Ticker", sort=False):
-            oset.add(tk)
-            sh = g["Shares"].sum()
-            ab = (g["Shares"] * g["Buy"]).sum() / sh if sh > 0 else 0.0
+            oset.add(tk); sh = g["Shares"].sum(); ab = (g["Shares"] * g["Buy"]).sum() / sh if sh > 0 else 0.0
             out.append({"Ticker": str(tk), "Company": str(next(iter(g["Company"]))), "Sector": str(next(iter(g["Sector"]))), "Shares": round(float(sh), 6), "Buy Price": round(float(ab), 4), "Current Price": round(float(ab), 4), "Currency": str(next(iter(g["Currency"]))), "Dividends EUR": round(max(divs.get(tk, 0.0), 0.0), 2)})
-    cdivs = sum(max(v, 0.0) for k, v in divs.items() if k not in oset)
-    return pd.DataFrame(out), ff, round(cpnl, 2), round(cdivs, 2)
+    return pd.DataFrame(out), ff, round(cpnl, 2), round(sum(max(v, 0.0) for k, v in divs.items() if k not in oset), 2)
 
-def parse_krk_complete(up_f):
-    kdf = pd.read_csv(up_f)
-    kdf.columns = kdf.columns.str.lower().str.strip()
+def parse_krk_all(up_f):
+    kdf = pd.read_csv(up_f); kdf.columns = kdf.columns.str.lower().str.strip()
     if not {"asset", "amount", "type"}.issubset(set(kdf.columns)): return pd.DataFrame(), None
     kdf["amount"], kdf["fee"] = pd.to_numeric(kdf["amount"], errors="coerce").fillna(0.0), pd.to_numeric(kdf.get("fee", 0.0), errors="coerce").fillna(0.0)
-    kdf["amountusd"] = pd.to_numeric(kdf.get("amountusd", 0.0), errors="coerce").fillna(0.0)
-    kdf["type"] = kdf["type"].astype(str).str.lower().str.strip()
+    kdf["amountusd"], kdf["type"] = pd.to_numeric(kdf.get("amountusd", 0.0), errors="coerce").fillna(0.0), kdf["type"].astype(str).str.lower().str.strip()
     m = {"XXBT": "BTC", "XBT": "BTC", "XETH": "ETH", "XXRP": "XRP", "XLTC": "LTC", "XXLM": "XLM", "XDOGE": "DOGE", "ZEUR": "EUR", "ZUSD": "USD", "ZGBP": "GBP"}
     kdf["norm"] = kdf["asset"].apply(lambda a: m.get(str(next(iter(str(a).strip().upper().split(".")))), str(next(iter(str(a).strip().upper().split("."))))))
-    fiat = {"EUR", "USD", "GBP"}
-    skip = {"transfer", "rollover", "margin", "settle", "hybridearnwithdrawal", "hybridearndeposit"}
     hold, cost, rew = {}, {}, {}
     ref = "refid" if "refid" in kdf.columns else ("txid" if "txid" in kdf.columns else None)
-
     for _, r in kdf.iterrows():
-        a, t, amt, fee = r["norm"], r["type"], float(r["amount"]), float(r["fee"])
-        if a in fiat or t in skip: continue
-        net = amt - fee
-        hold[a] = hold.get(a, 0.0) + net
-        uv = abs(float(r["amountusd"]))
+        a, t, amt, fee, uv = r["norm"], r["type"], float(r["amount"]), float(r["fee"]), abs(float(r["amountusd"]))
+        if a in {"EUR", "USD", "GBP"} or t in {"transfer", "rollover", "margin", "settle", "hybridearnwithdrawal", "hybridearndeposit"}: continue
+        net = amt - fee; hold[a] = hold.get(a, 0.0) + net
         if t == "deposit" and amt > 0 and uv > 0: cost[a] = cost.get(a, 0.0) + (uv / 1.168)
         if t in ("reward", "staking", "earn", "airdrop", "dividend") and net > 0: rew[a] = rew.get(a, 0.0) + (uv / 1.10 if uv > 0 else 0.0)
-
     if ref:
         for _, g in kdf.groupby(ref):
-            cr = g[~g["norm"].isin(fiat) & g["type"].isin(("trade", "spend", "receive"))]
-            fr = g[g["norm"].isin(fiat) & g["type"].isin(("trade", "spend", "receive"))]
-            if not cr.empty and not fr.empty:
-                ca, camt = str(next(iter(cr["norm"]))), float(cr["amount"].sum())
-                fsp = abs(float(fr["amount"].sum())) + float(fr["fee"].sum())
-                if camt > 0: cost[ca] = cost.get(ca, 0.0) + fsp
-
-    rows = []
-    for a, sh in hold.items():
-        if sh <= 1e-7: continue
-        tk = f"{a}-EUR"
-        comp, _, _ = get_meta(tk)
-        ap = (cost.get(a, 0.0) / sh) if (cost.get(a, 0.0) > 0 and sh > 0) else 0.0
-        rows.append({"Ticker": tk, "Company": comp, "Sector": "Crypto", "Shares": round(sh, 8), "Buy Price": round(ap, 4), "Current Price": round(ap, 4), "Currency": "EUR", "Dividends EUR": round(rew.get(a, 0.0), 4)})
-
+            cr, fr = g[~g["norm"].isin({"EUR", "USD", "GBP"}) & g["type"].isin(("trade", "spend", "receive"))], g[g["norm"].isin({"EUR", "USD", "GBP"}) & g["type"].isin(("trade", "spend", "receive"))]
+            if not cr.empty and not fr.empty and float(cr["amount"].sum()) > 0:
+                ca = str(next(iter(cr["norm"]))); cost[ca] = cost.get(ca, 0.0) + abs(float(fr["amount"].sum())) + float(fr["fee"].sum())
+    rows = [{"Ticker": f"{a}-EUR", "Company": get_meta(f"{a}-EUR")[0], "Sector": "Crypto", "Shares": round(sh, 8), "Buy Price": round((cost.get(a, 0.0) / sh) if cost.get(a, 0.0) > 0 else 0.0, 4), "Current Price": round((cost.get(a, 0.0) / sh) if cost.get(a, 0.0) > 0 else 0.0, 4), "Currency": "EUR", "Dividends EUR": round(rew.get(a, 0.0), 4)} for a, sh in hold.items() if sh > 1e-7]
     er = kdf[kdf["norm"] == "EUR"]
-    kcash = round(float((er["amount"] - er["fee"]).sum()), 2) if not er.empty else None
-    return pd.DataFrame(rows), kcash
+    return pd.DataFrame(rows), (round(float((er["amount"] - er["fee"]).sum()), 2) if not er.empty else None)
 
 if st.button("⬅️ Meniu Principal"): st.switch_page("app.py")
 if st.sidebar.button("🔄 Actualizează prețurile live"): st.cache_data.clear(); st.rerun()
-
 st.title("📊 Sinteză Completă: XTB + Kraken")
-tc = st.sidebar.selectbox("Monedă raportare", ("EUR", "USD", "GBP"))
-stats = load_stats()
+tc, stats = st.sidebar.selectbox("Monedă raportare", ("EUR", "USD", "GBP")), load_stats()
 req = ["Ticker", "Company", "Sector", "Shares", "Buy Price", "Current Price", "Currency", "Dividends EUR"]
 
 with st.container(border=True):
@@ -174,10 +134,15 @@ with st.container(border=True):
         f_xtb = st.file_uploader("Raport XTB (.xlsx sau .csv):", type=["xlsx", "csv"], key="s_xtb")
         if f_xtb is not None and st.button("Actualizează Tot XTB", type="primary"):
             old_x = pd.read_csv(XTB_CSV).fillna("") if XTB_CSV.exists() else pd.DataFrame(columns=req)
-            ndf, ff, cpnl, cdiv = parse_xtb_complete(f_xtb, old_x)
+            ndf, ff, cpnl, cdiv = parse_xtb_all(f_xtb, old_x)
             if not ndf.empty: save_csv_permanent(ndf.reindex(columns=req), XTB_CSV)
             if ff is not None: stats["xtb_cash"] = ff
             stats["xtb_closed_pnl"] = cpnl
             if cdiv > 0: stats["xtb_closed_divs"] = cdiv
-            ok = save_stats(stats)
-            st.cache_data.clear()
+            save_stats(stats); st.cache_data.clear(); st.rerun()
+    with u2:
+        f_krk = st.file_uploader("Raport Kraken Libro mayor (.csv):", type="csv", key="s_krk")
+        if f_krk is not None and st.button("Actualizează Tot Kraken", type="primary"):
+            kdf_n, kc = parse_krk_all(f_krk)
+            if not kdf_n.empty: save_csv_permanent(kdf_n.reindex(columns=req), KRK_CSV)
+            if kc is not None: stats["krk_cash"] = kc
