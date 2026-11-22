@@ -8,17 +8,16 @@ st.set_page_config(page_title="Watchlist", layout="wide")
 BASE = Path(__file__).resolve().parent.parent
 CSV_PATH, XTB_PATH = BASE / "watchlist.csv", BASE / "portfolio.csv"
 
-st.markdown("<style>div[data-testid='stButton'] button p {font-size: 16px !important; font-weight: 700 !important;}</style>", unsafe_allow_html=True)
-
+st.markdown("<style>div[data-testid='stButton'] button p {font-size: 15px !important; font-weight: 700 !important;}</style>", unsafe_allow_html=True)
 for k_ss in ("w_add", "w_del"):
     if k_ss not in st.session_state: st.session_state[k_ss] = False
-if "w_flt" not in st.session_state: st.session_state.w_flt = ""
 
-n1, n2, n3, n4 = st.columns(4)
+n1, n2, n3, n4, n5 = st.columns(5)
 if n1.button("⬅️ Meniu Principal", use_container_width=True): st.switch_page("app.py")
 if n2.button("📈 Portofoliu XTB", use_container_width=True): st.switch_page("pages/1_Portofoliu_XTB.py")
 if n3.button("🪙 Portofoliu Kraken", use_container_width=True): st.switch_page("pages/2_Portofoliu_Kraken.py")
 if n4.button("📊 XTB   Kraken", use_container_width=True): st.switch_page("pages/4_XTB_Kraken.py")
+if n5.button("🔍 Analiză", use_container_width=True): st.switch_page("pages/5_Analiza.py")
 
 if st.sidebar.button("🔄 Actualizează prețurile live"): st.cache_data.clear(); st.rerun()
 
@@ -31,8 +30,7 @@ for c in req:
 xtb_avg = {}
 if XTB_PATH.exists():
     try:
-        xdf = pd.read_csv(XTB_PATH).fillna("")
-        for _, r in xdf.iterrows():
+        for _, r in pd.read_csv(XTB_PATH).fillna("").iterrows():
             tk = str(r.get("Ticker", "")).strip().upper()
             bp = pd.to_numeric(r.get("Buy Price", 0.0), errors="coerce")
             if tk and pd.notna(bp) and bp > 0: xtb_avg[tk] = float(bp)
@@ -58,9 +56,7 @@ if st.session_state.w_add:
             if added:
                 ndf = pd.concat([df.reindex(columns=req), pd.DataFrame(added)], ignore_index=True)
                 save_csv_permanent(ndf, CSV_PATH)
-                st.session_state.w_add = False
-                st.cache_data.clear()
-                st.rerun()
+                st.session_state.w_add = False; st.cache_data.clear(); st.rerun()
 
 if st.session_state.w_del:
     with st.container(border=True):
@@ -71,26 +67,17 @@ if st.session_state.w_del:
             if c_d2.button("Confirmă ștergerea", type="primary"):
                 ndf = df[df["Ticker"].astype(str) != sel_d].reindex(columns=req)
                 save_csv_permanent(ndf, CSV_PATH)
-                st.session_state.w_del = False
-                st.cache_data.clear()
-                st.rerun()
-st.markdown("<br><br>", unsafe_allow_html=True)
-_, b_rsi, b_sma, _ = st.columns((2.5, 1.5, 1.5, 2.5))
-if b_rsi.button("📉 RSI < 30", use_container_width=True):
-    st.session_state.w_flt = "" if st.session_state.w_flt == "rsi" else "rsi"
-if b_sma.button("📊 SMA200 <", use_container_width=True):
-    st.session_state.w_flt = "" if st.session_state.w_flt == "sma" else "sma"
+                st.session_state.w_del = False; st.cache_data.clear(); st.rerun()
 
 df = df[df["Ticker"].astype(str).str.strip() != ""].copy()
 tks = df["Ticker"].astype(str).unique().tolist()
 acurr = sorted([x for x in df["Currency"].astype(str).unique().tolist() if x.strip()]) or ["EUR", "USD"]
-prices, changes, rsim, smam, fx = fetch_data(tks, list(set(acurr + ["EUR", "USD", "GBP"])))
+prices, changes, rsim, smam, _ = fetch_data(tks, list(set(acurr + ["EUR", "USD", "GBP"])))
 adiv = fetch_annual_dividends(tks)
 
 df[t_col] = pd.to_numeric(df.get(t_col, 0.0), errors="coerce").fillna(0.0).astype(float)
 df["XTB_P"] = df["Ticker"].astype(str).str.upper().map(xtb_avg)
 df[t_col] = np.where(df["XTB_P"].notna(), df["XTB_P"], df[t_col]).astype(float)
-
 df["Current Price"] = pd.to_numeric(df["Ticker"].map(prices), errors="coerce").astype(float)
 df["Day_Pct"] = pd.to_numeric(df["Ticker"].map(changes), errors="coerce").astype(float)
 df["RSI"] = pd.to_numeric(df["Ticker"].map(rsim), errors="coerce").astype(float)
@@ -100,30 +87,14 @@ df["vs_Target"] = np.where((df[t_col] > 0) & df["Current Price"].notna(), (df["C
 df["Div_Sh"] = pd.to_numeric(df["Ticker"].map(adiv), errors="coerce").fillna(0.0).astype(float)
 df["Div_Y"] = np.where((df["Current Price"] > 0) & (df["Div_Sh"] > 0), (df["Div_Sh"] / df["Current Price"]) * 100, np.nan).astype(float)
 
+v = df.sort_values(by="Ticker", ascending=True)
 fyoc = lambda x: "" if (pd.isna(x) or x == "" or float(x) <= 0) else f"{float(x):.2f}%"
 f_avg = lambda x: "" if (pd.isna(x) or x == "" or float(x) <= 0) else f_price(x)
 
-def show_wl_table(sub_df, h_px):
+if not v.empty:
     cols = ["Ticker", "Company", "Currency", "Sector", "vs_Target", t_col, "Current Price", "Div_Y", "RSI", "SMA_Pct", "Day_Pct"]
-    disp = sub_df.reindex(columns=cols).copy()
+    disp = v.reindex(columns=cols).copy()
     disp.columns = ["Tiker", "Companie", "Monedă", "Sector", "vs Preț mediu %", "Preț mediu", "Preț curent", "Dividend AN%", "RSI (14)", "vs SMA 200 %", "Variație azi %"]
     fmt = {"Preț mediu": f_avg, "Preț curent": f_price, "Dividend AN%": fyoc, "RSI (14)": f_rsi, "vs SMA 200 %": f_sma, "vs Preț mediu %": f_pct, "Variație azi %": f_pct}
     styler = clean_table(disp, fmt).style.map(c_pnl, subset=["vs Preț mediu %", "vs SMA 200 %", "Variație azi %"]).map(c_rsi, subset=["RSI (14)"])
-    st.dataframe(styler, use_container_width=True, hide_index=True, height=h_px, column_config={"Tiker": st.column_config.TextColumn("Tiker", pinned=True)})
-
-if st.session_state.w_flt == "rsi":
-    top_rsi = df[df["RSI"].notna() & (df["RSI"] < 30)].sort_values(by="RSI", ascending=True).head(5)
-    st.subheader("📉 Top 5 Acțiuni cu RSI < 30 (Crescător)")
-    if top_rsi.empty: st.info("Nicio acțiune din Watchlist nu are RSI sub 30 în acest moment.")
-    else: show_wl_table(top_rsi, 215)
-    st.divider()
-elif st.session_state.w_flt == "sma":
-    top_sma = df[df["SMA_Pct"].notna() & (df["SMA_Pct"] < 0)].sort_values(by="SMA_Pct", ascending=True).head(5)
-    st.subheader("📊 Top 5 Acțiuni sub SMA 200 (De la cea mai mare scădere)")
-    if top_sma.empty: st.info("Nicio acțiune din Watchlist nu se află sub SMA 200 în acest moment.")
-    else: show_wl_table(top_sma, 215)
-    st.divider()
-
-v = df.sort_values(by="Ticker", ascending=True)
-if not v.empty:
-    show_wl_table(v, 580)
+    st.dataframe(styler, use_container_width=True, hide_index=True, height=620, column_config={"Tiker": st.column_config.TextColumn("Tiker", pinned=True)})
