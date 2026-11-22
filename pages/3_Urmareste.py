@@ -1,181 +1,106 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import yfinance as yf
-import time
 from pathlib import Path
-from utils import load_csv, save_csv_permanent, get_meta, fetch_data, c_pnl, f_price, f_rsi, f_sma, clean_table, quick_del
+from utils import save_csv_permanent, get_meta, fetch_data, fetch_annual_dividends, c_pnl, c_rsi, f_price, f_rsi, f_sma, f_pct, clean_table
 
-st.set_page_config(page_title="Urmărește", layout="wide")
+st.set_page_config(page_title="Urmărește (Watchlist)", layout="wide")
 CSV_PATH = Path(__file__).resolve().parent.parent / "watchlist.csv"
-XTB_CSV = Path(__file__).resolve().parent.parent / "portfolio.csv"
 
-@st.cache_data(ttl=86400, show_spinner=False)
-def get_auto_div_yields(tickers):
-    res_pct = dict()
-    uk = ["DGE.L", "BATS.L", "ABF.L"]
-    cutoff = pd.Timestamp.utcnow() - pd.Timedelta(days=365)
-    for t in tickers:
-        try:
-            tk = yf.Ticker(t)
-            sc = 0.01 if t in uk else 1.0
-            p_now = float(tk.fast_info.get("lastPrice") or 0)
-            if p_now <= 0:
-                continue
-            p_real = p_now * sc
-            info = tk.info or {}
-            dr = float(info.get("dividendRate") or 0) * sc
-            if dr > 0 and (dr / p_real) <= 0.15:
-                res_pct[t] = (dr / p_real) * 100.0
-                time.sleep(0.1)
-                continue
-            divs = tk.dividends
-            if divs is not None and not divs.empty:
-                recent = divs[divs.index >= cutoff]
-                if not recent.empty:
-                    vals = recent.values * sc
-                    vals = vals[(vals / p_real) <= 0.12]
-                    ann_div = float(np.sum(vals))
-                    if ann_div > 0:
-                        res_pct[t] = (ann_div / p_real) * 100.0
-            time.sleep(0.1)
-        except Exception:
-            pass
-    return res_pct
+st.markdown("<style>div[data-testid='stButton'] button p {font-size: 16px !important; font-weight: 700 !important;}</style>", unsafe_allow_html=True)
 
-if st.button("⬅️ Meniu Principal"):
-    st.switch_page("app.py")
-if st.sidebar.button("🔄 Actualizează prețurile live"):
-    st.cache_data.clear()
-    st.rerun()
+for k_ss in ("w_add", "w_del"):
+    if k_ss not in st.session_state: st.session_state[k_ss] = False
 
-st.title("👁️ Listă de Urmărire (Watchlist)")
-w_cols = ["Ticker", "Company", "Currency", "Sector"]
-df = load_csv(CSV_PATH, w_cols).copy()
+n1, n2, n3, n4 = st.columns(4)
+if n1.button("⬅️ Meniu Principal", use_container_width=True): st.switch_page("app.py")
+if n2.button("📈 Portofoliu XTB", use_container_width=True): st.switch_page("pages/1_Portofoliu_XTB.py")
+if n3.button("🪙 Portofoliu Kraken", use_container_width=True): st.switch_page("pages/2_Portofoliu_Kraken.py")
+if n4.button("📊 XTB   Kraken", use_container_width=True): st.switch_page("pages/4_XTB_Kraken.py")
 
-for c in w_cols:
-    if c not in df.columns:
-        df[c] = ""
+if st.sidebar.button("🔄 Actualizează prețurile live"): st.cache_data.clear(); st.rerun()
 
-xtb_df = load_csv(XTB_CSV, ["Ticker", "Company", "Currency", "Sector", "Buy Price"]).copy()
-avg_price_map = dict()
-if not xtb_df.empty and "Buy Price" in xtb_df.columns:
-    xtb_df["Buy Price"] = pd.to_numeric(xtb_df["Buy Price"], errors="coerce")
-    avg_price_map = xtb_df.dropna(subset=["Ticker", "Buy Price"]).set_index("Ticker")["Buy Price"].to_dict()
+req = ["Ticker", "Company", "Sector", "Target Price", "Currency"]
+df = pd.read_csv(CSV_PATH).fillna("") if CSV_PATH.exists() else pd.DataFrame(columns=req)
+for c in req:
+    if c not in df.columns: df[c] = 0.0 if c == "Target Price" else ""
 
-with st.expander("➕ Adaugă rapid mai multe tikere odată", expanded=False):
-    raw = st.text_area("Introdu simbolurile separate prin virgulă sau spațiu:", placeholder="Ex: TSLA, KO, O, NVDA, NKE, BTC-EUR", height=70)
-    if st.button("Adaugă în listă", type="primary"):
-        new_l = [t.strip().upper() for t in raw.replace(",", " ").replace("\n", " ").split(" ") if t.strip()]
-        ex = set(df["Ticker"].astype(str).str.upper().tolist())
-        to_add = [t for t in dict.fromkeys(new_l) if t not in ex]
-        if to_add:
-            rows = []
-            for t in to_add:
-                comp, sec, curr = get_meta(t)
-                rows.append(dict(Ticker=t, Company=comp, Currency=curr, Sector=sec))
-            add_df = pd.DataFrame(rows)
-            save_csv_permanent(pd.concat([df[w_cols], add_df], ignore_index=True), CSV_PATH)
-            st.cache_data.clear()
-            st.rerun()
+h1, h2, h3 = st.columns((5.4, 1.3, 1.3))
+h1.title("👁️ Listă de Urmărire (Watchlist)")
+if h2.button("➕ Adaugă tiker", use_container_width=True): st.session_state.w_add = not st.session_state.w_add; st.session_state.w_del = False
+if h3.button("🗑️ Șterge tiker", use_container_width=True): st.session_state.w_del = not st.session_state.w_del; st.session_state.w_add = False
 
-quick_del(df, w_cols, CSV_PATH, "watch")
+if st.session_state.w_add:
+    with st.container(border=True):
+        raw_tks = st.text_input("Introdu tikere separate prin virgulă (ex: AAPL, MSFT, O, SCHD):", key="w_in_tks")
+        if st.button("Salvează tikerele", type="primary") and raw_tks.strip():
+            new_list = [x.strip().upper() for x in raw_tks.split(",") if x.strip()]
+            ex_set = set(df["Ticker"].astype(str).str.upper().tolist())
+            added = []
+            for tk in new_list:
+                if tk not in ex_set:
+                    comp, sec, curr = get_meta(tk)
+                    added.append({"Ticker": tk, "Company": comp, "Sector": sec, "Target Price": 0.0, "Currency": curr})
+                    ex_set.add(tk)
+            if added:
+                ndf = pd.concat([df.reindex(columns=req), pd.DataFrame(added)], ignore_index=True)
+                save_csv_permanent(ndf, CSV_PATH)
+                st.session_state.w_add = False
+                st.cache_data.clear()
+                st.rerun()
 
-tickers = [x for x in df["Ticker"].dropna().unique().tolist() if str(x).strip() != ""]
-all_curr = sorted([x for x in df["Currency"].dropna().unique().tolist() if str(x).strip() != ""]) or ["EUR", "USD"]
-prices, _, rsi_m, sma_m, _ = fetch_data(tickers, ["EUR", "USD", "GBP"])
-auto_yield_map = get_auto_div_yields(tickers)
+if st.session_state.w_del:
+    with st.container(border=True):
+        tks_del = df["Ticker"].astype(str).tolist() if not df.empty else []
+        if tks_del:
+            c_d1, c_d2 = st.columns((3, 1))
+            sel_d = c_d1.selectbox("Alege tikerul de șters:", tks_del, key="w_sel_del")
+            if c_d2.button("Confirmă ștergerea", type="primary"):
+                ndf = df[df["Ticker"].astype(str) != sel_d].reindex(columns=req)
+                save_csv_permanent(ndf, CSV_PATH)
+                st.session_state.w_del = False
+                st.cache_data.clear()
+                st.rerun()
+df = df[df["Ticker"].astype(str).str.strip() != ""].copy()
+tks = df["Ticker"].astype(str).unique().tolist()
+acurr = sorted([x for x in df["Currency"].astype(str).unique().tolist() if x.strip()]) or ["EUR", "USD"]
+prices, changes, rsim, smam, fx = fetch_data(tks, list(set(acurr + ["EUR", "USD", "GBP"])))
+adiv = fetch_annual_dividends(tks)
 
-df["Avg_Price"] = pd.to_numeric(df["Ticker"].map(avg_price_map), errors="coerce").astype(float)
-df["Current"] = pd.to_numeric(df["Ticker"].map(prices), errors="coerce").astype(float)
-df["Diff_Avg_Pct"] = np.where((df["Avg_Price"] > 0) & df["Current"].notna(), (df["Current"] - df["Avg_Price"]) / df["Avg_Price"] * 100, np.nan).astype(float)
-df["Div_Yield"] = pd.to_numeric(df["Ticker"].map(auto_yield_map), errors="coerce").astype(float)
-df["RSI"] = pd.to_numeric(df["Ticker"].map(rsi_m), errors="coerce").astype(float)
-df["SMA200"] = pd.to_numeric(df["Ticker"].map(sma_m), errors="coerce").astype(float)
-df["SMA_Pct"] = np.where(df["SMA200"].notna() & (df["SMA200"] != 0), (df["Current"] - df["SMA200"]) / df["SMA200"] * 100, np.nan).astype(float)
+df["Target Price"] = pd.to_numeric(df.get("Target Price", 0.0), errors="coerce").fillna(0.0).astype(float)
+df["Current Price"] = pd.to_numeric(df["Ticker"].map(prices), errors="coerce").astype(float)
+df["Day_Pct"] = pd.to_numeric(df["Ticker"].map(changes), errors="coerce").astype(float)
+df["RSI"] = pd.to_numeric(df["Ticker"].map(rsim), errors="coerce").astype(float)
+df["SMA200"] = pd.to_numeric(df["Ticker"].map(smam), errors="coerce").astype(float)
+df["SMA_Pct"] = np.where(df["SMA200"].notna() & (df["SMA200"] != 0), (df["Current Price"] - df["SMA200"]) / df["SMA200"] * 100, np.nan).astype(float)
+df["vs_Target"] = np.where((df["Target Price"] > 0) & df["Current Price"].notna(), (df["Current Price"] - df["Target Price"]) / df["Target Price"] * 100, np.nan).astype(float)
+df["Div_Sh"] = pd.to_numeric(df["Ticker"].map(adiv), errors="coerce").fillna(0.0).astype(float)
+df["Div_Y"] = np.where((df["Current Price"] > 0) & (df["Div_Sh"] > 0), (df["Div_Sh"] / df["Current Price"]) * 100, np.nan).astype(float)
 
-st.sidebar.header("Setări afișare")
-c_filt = st.sidebar.selectbox("Filtrare după monedă", ["Toate"] + all_curr)
-sort_by = st.sidebar.selectbox(
-    "Ordonează tabelul după",
-    [
-        "Divident AN% (Descrescător)",
-        "vs Preț mediu % (Cele mai scăzute)",
-        "RSI (Crescător - Supravândute)",
-        "RSI (Descrescător - Supracumpărate)",
-        "vs SMA 200 % (Crescător)",
-        "vs SMA 200 % (Descrescător)",
-        "Preț curent (Descrescător)",
-        "Sector (A-Z)",
-        "Tiker (A-Z)"
-    ]
-)
+st.sidebar.subheader("Setări afișare")
+cf = st.sidebar.selectbox("Filtrare după monedă", ["Toate"] + acurr)
+sb = st.sidebar.selectbox("Ordonează tabelul după", ("Tiker", "Dividend AN%", "RSI (14)", "vs SMA 200 %", "vs Preț mediu %", "Variație azi %"))
 
-view = df.copy() if c_filt == "Toate" else df[df["Currency"] == c_filt].copy()
+v = df.copy() if cf == "Toate" else df[df["Currency"] == cf].copy()
+smap = {"Tiker": ("Ticker", True), "Dividend AN%": ("Div_Y", False), "RSI (14)": ("RSI", True), "vs SMA 200 %": ("SMA_Pct", True), "vs Preț mediu %": ("vs_Target", True), "Variație azi %": ("Day_Pct", False)}
+cs, ascs = smap.get(sb)
+v = v.sort_values(by=cs, ascending=ascs, na_position="last")
 
-s_map = dict([
-    ("Divident AN% (Descrescător)", ("Div_Yield", False)),
-    ("vs Preț mediu % (Cele mai scăzute)", ("Diff_Avg_Pct", True)),
-    ("RSI (Crescător - Supravândute)", ("RSI", True)),
-    ("RSI (Descrescător - Supracumpărate)", ("RSI", False)),
-    ("vs SMA 200 % (Crescător)", ("SMA_Pct", True)),
-    ("vs SMA 200 % (Descrescător)", ("SMA_Pct", False)),
-    ("Preț curent (Descrescător)", ("Current", False)),
-    ("Sector (A-Z)", ("Sector", True)),
-    ("Tiker (A-Z)", ("Ticker", True))
-])
-col_s, asc_s = s_map[sort_by]
-view = view.sort_values(by=col_s, ascending=asc_s, na_position="last")
+fyoc = lambda x: "" if (pd.isna(x) or x == "" or float(x) <= 0) else f"{float(x):.2f}%"
 
-st.sidebar.info(f"Fișier: `{CSV_PATH.name}`\n\nSimboluri afișate: {len(view)}/{len(df)}")
+if not v.empty:
+    cols = ["Ticker", "Company", "Currency", "Sector", "vs_Target", "Target Price", "Current Price", "Div_Y", "RSI", "SMA_Pct", "Day_Pct"]
+    disp = v.reindex(columns=cols).copy()
+    disp.columns = ["Tiker", "Companie", "Monedă", "Sector", "vs Preț mediu %", "Preț mediu", "Preț curent", "Dividend AN%", "RSI (14)", "vs SMA 200 %", "Variație azi %"]
+    fmt = {"Preț mediu": f_price, "Preț curent": f_price, "Dividend AN%": fyoc, "RSI (14)": f_rsi, "vs SMA 200 %": f_sma, "vs Preț mediu %": f_pct, "Variație azi %": f_pct}
+    styler = clean_table(disp, fmt).style.map(c_pnl, subset=["vs Preț mediu %", "vs SMA 200 %", "Variație azi %"]).map(c_rsi, subset=["RSI (14)"])
+    st.dataframe(styler, use_container_width=True, hide_index=True, height=580, column_config={"Tiker": st.column_config.TextColumn("Tiker", pinned=True)})
 
-def f_div_yield(v):
-    return "" if (pd.isna(v) or v == "" or float(v) <= 0) else f"{float(v):.2f}%"
-
-def c_rsi_watch(v):
-    if pd.isna(v) or str(v).strip() == "":
-        return ""
-    try:
-        num = float(str(v).replace("%", ""))
-        if num <= 30:
-            return "color: #00e676; font-weight: bold;"
-        if 30 < num <= 40:
-            return "color: #ffd54f; font-weight: bold;"
-        if num >= 70:
-            return "color: #ff5252; font-weight: bold;"
-        return ""
-    except Exception:
-        return ""
-
-def fmt_sma_combined(r):
-    if pd.isna(r["SMA200"]) or pd.isna(r["SMA_Pct"]):
-        return ""
-    p_str = f"{r['SMA200']:,.4f}" if abs(r["SMA200"]) < 2 else f"{r['SMA200']:,.2f}"
-    return f"{p_str} ({r['SMA_Pct']:+.2f}%)"
-
-def color_sma_combined(v):
-    if pd.isna(v) or str(v).strip() == "" or "(" not in str(v):
-        return ""
-    pct_part = str(v).split("(")[1].replace("%)", "").replace("+", "")
-    try:
-        num = float(pct_part)
-        return "color: #00e676; font-weight: bold;" if num > 0 else ("color: #ff5252; font-weight: bold;" if num < 0 else "")
-    except Exception:
-        return ""
-
-if not view.empty:
-    view["SMA_Disp"] = view.apply(fmt_sma_combined, axis=1)
-    disp = view[["Ticker", "Company", "Currency", "Sector", "Diff_Avg_Pct", "Avg_Price", "Current", "Div_Yield", "RSI", "SMA_Disp"]].copy()
-    disp.columns = ["Tiker", "Companie", "Monedă", "Sector", "vs Preț mediu %", "Preț mediu", "Preț curent", "Divident AN%", "RSI (14)", "SMA 200"]
-    fmt = dict([("vs Preț mediu %", f_sma), ("Preț mediu", f_price), ("Preț curent", f_price), ("Divident AN%", f_div_yield), ("RSI (14)", f_rsi)])
-    disp_clean = clean_table(disp, fmt)
-    styler = disp_clean.style.map(c_pnl, subset=["vs Preț mediu %"]).map(color_sma_combined, subset=["SMA 200"]).map(c_rsi_watch, subset=["RSI (14)"])
-    st.dataframe(styler, use_container_width=True, hide_index=True, height=480, column_config=dict(Tiker=st.column_config.TextColumn("Tiker", pinned=True)))
-
-st.subheader("Editare listă (watchlist.csv)")
-edited = st.data_editor(view[w_cols], num_rows="dynamic", use_container_width=True, key="ed_watch")
+st.subheader("Editare listă urmărire (watchlist.csv)")
+ed = st.data_editor(v.reindex(columns=req), num_rows="dynamic", use_container_width=True, key="ed_wl")
 if st.button("Salvează modificările în watchlist.csv"):
-    up = edited if c_filt == "Toate" else pd.concat([df[df["Currency"] != c_filt][w_cols], edited], ignore_index=True)
-    ok = save_csv_permanent(up, CSV_PATH)
-    st.cache_data.clear()
-    st.success("Salvat permanent pe GitHub!" if ok else "Salvat local!")
+    up = ed if cf == "Toate" else pd.concat([df[df["Currency"] != cf].reindex(columns=req), ed], ignore_index=True)
+    if not up.empty:
+        ok = save_csv_permanent(up, CSV_PATH)
+        st.cache_data.clear()
+        st.success("Salvat permanent pe GitHub!" if ok else "Salvat local!")
