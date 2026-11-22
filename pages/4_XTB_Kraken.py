@@ -80,7 +80,6 @@ def parse_xtb_files(files_list, old_df):
                     elif cn == "current price": cidx = i
                     elif cn == "open price": oidx = i
                 continue
-
             if mode == "closed":
                 if c0.startswith("profit/loss") or c0.startswith("total"):
                     v = to_num(gcol(r, pidx))
@@ -124,6 +123,7 @@ def parse_xtb_files(files_list, old_df):
             out.append({"Ticker": str(tk), "Company": str(next(iter(g["Company"]))), "Sector": str(next(iter(g["Sector"]))), "Shares": round(float(sh), 6), "Buy Price": round(float(ab), 4), "Current Price": round(float(ac), 4), "Currency": str(next(iter(g["Currency"]))), "Dividends EUR": round(max(divs.get(tk, 0.0), 0.0), 2)})
     inv_eur = round(ov_mkt - ov_unr, 2) if has_ov else None
     return pd.DataFrame(out), (round(tot_ff, 2) if has_ff else None), round(tot_cpnl, 2), round(sum(max(v, 0.0) for k, v in divs.items() if k not in oset), 2), round(tot_dep, 2), round(tot_with, 2), inv_eur, (round(ov_mkt, 2) if has_ov else None)
+
 def parse_krk_all(up_f):
     kdf = pd.read_csv(up_f); kdf.columns = kdf.columns.str.lower().str.strip()
     if not {"asset", "amount", "type"}.issubset(set(kdf.columns)): return pd.DataFrame(), None, 0.0, 0.0
@@ -149,7 +149,6 @@ def parse_krk_all(up_f):
     rows = [{"Ticker": f"{a}-EUR", "Company": get_meta(f"{a}-EUR"), "Sector": "Crypto", "Shares": round(sh, 8), "Buy Price": round((cost.get(a, 0.0) / sh) if cost.get(a, 0.0) > 0 else 0.0, 4), "Current Price": round((cost.get(a, 0.0) / sh) if cost.get(a, 0.0) > 0 else 0.0, 4), "Currency": "EUR", "Dividends EUR": round(rew.get(a, 0.0), 4)} for a, sh in hold.items() if sh > 1e-7]
     er = kdf[kdf["norm"] == "EUR"]
     return pd.DataFrame(rows), (round(float((er["amount"] - er["fee"]).sum()), 2) if not er.empty else None), round(kdep, 2), round(kwth, 2)
-
 for k_ss in ("imp_x4", "imp_k4"):
     if k_ss not in st.session_state: st.session_state[k_ss] = False
 
@@ -252,3 +251,24 @@ if st.session_state.imp_k4:
                 if not kdf_n.empty: save_csv_permanent(kdf_n.reindex(columns=req), KRK_CSV)
                 if kc is not None: stats["krk_cash"] = kc
                 if kd > 0: stats["krk_dep"] = kd
+                if kw > 0: stats["krk_with"] = kw
+            save_stats(stats); st.session_state.imp_k4 = False; st.cache_data.clear(); st.rerun()
+
+render_html_tbl([
+    ("1. Total<br>Depus", f"{k_dep:,.2f}", "Totalul depunerilor în contul Kraken"),
+    ("2. Total<br>Retras", f"-{k_with:,.2f}", "Totalul retragerilor din contul Kraken"),
+    ("3. Capital<br>Net", f"{k_net_dep:,.2f}", "Depuneri minus retrageri (capitalul tău activ în Kraken)"),
+    ("4. Câștig<br>Earn", f"+{k_earn:,.4f}", "Recompense acumulate din Earn / Staking"),
+    ("5. Valoare<br>Cont Kraken", f"{k_val_cont:,.2f}", "Valoare Piață Crypto + Fonduri Libere (Cash)"),
+    ("6. Fonduri<br>Libere", f"{k_cash:,.2f}", "Suma nealocată (Cash EUR disponibil în Kraken)"),
+    ("7. Total<br>Investit", f"{k_inv:,.2f}", "Costul total de achiziție al criptomonedelor deținute"),
+    ("8. Profit", f"{k_unr:+,.2f}", "Profitul sau pierderea actualizată (Valoare Piață minus Total Investit + Earn)"),
+    ("9. Valoare<br>Piață", f"{k_mkt:,.2f}", "Valoarea actuală live a criptomonedelor din portofoliu")
+])
+
+st.divider(); st.subheader("🌐 Total General (XTB + Kraken)")
+g1, g2, g3, g4 = st.columns(4)
+g1.metric("Total Investit", f"{(x_inv + k_inv):,.2f} {tc}")
+g2.metric("Total Cash Nealocat", f"{(x_cash + k_cash):,.2f} {tc}")
+g3.metric("Valoare Totală Conturi", f"{(x_val_cont + k_val_cont):,.2f} {tc}")
+g4.metric("Profit Net Cumulat", f"{(x_net_real + k_unr):+,.2f} {tc}")
